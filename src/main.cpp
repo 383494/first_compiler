@@ -13,7 +13,8 @@ int main(int argc, const char *argv[]) {
 	auto inp = argv[2];
 
 	yyin = fopen(inp, "r");
-	
+	assert(yyin);
+
 	// parse input file
 	std::unique_ptr<BaseAST> ast;
 	auto ret = yyparse(ast);
