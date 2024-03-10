@@ -20,7 +20,7 @@ int main(int argc, const char *argv[]) {
 	auto ret = yyparse(ast);
 	assert(!ret);
 
-	ast->output("");
+	ast->output(std::cout, "");
 	// dump AST
 	return 0;
 }

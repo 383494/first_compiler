@@ -59,7 +59,7 @@ FuncDef
 FuncType
 	: INT {
 		auto ast = new TypAST();
-		ast->typ = "InT";
+		ast->typ = "i32";
 		$$ = ast;
 	}
 	;

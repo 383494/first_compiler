@@ -1,22 +1,28 @@
 #include <string>
 #include <iostream>
 #include <memory>
+#include <sstream>
+
+namespace Ast_Base{
 
 constexpr const char* INDENT = "  ";
+using Ost = std::ostream;
+
+namespace Ast_Defs {
 
 class BaseAST{
 public:
 	virtual ~BaseAST() = default;
-	virtual void output(std::string) const = 0;
+	virtual void output(Ost&, std::string) const = 0;
 };
 
 class CompUnitAST: public BaseAST{
 public:
 	std::unique_ptr<BaseAST> func_def;
-	void output(std::string prefix) const override{
-		std::cout << prefix << "CompUnit{\n";
-		func_def->output(prefix + INDENT);
-		std::cout << '\n' << prefix << "}";
+	void output(Ost &outstr, std::string prefix) const override{
+		//outstr << prefix << "CompUnit{\n";
+		func_def->output(outstr, prefix);
+		//outstr << '\n' << prefix << "}";
 	}
 };
 
@@ -25,38 +31,44 @@ public:
 	std::unique_ptr<BaseAST> func_typ;
 	std::string ident;
 	std::unique_ptr<BaseAST> block;
-	void output(std::string prefix) const override{
-		std::cout << prefix << "FuncDef(";
-		func_typ->output("");
-		std::cout << ident << "){\n";
-		block->output(prefix + INDENT);
-		std::cout << "\n" << prefix << "}";
+	void output(Ost &outstr, std::string prefix) const override{
+		outstr << prefix << "fun @" << ident << "():";
+		func_typ->output(outstr, "");
+		outstr << "{\n";
+		block->output(outstr, prefix + INDENT);
+		outstr << "\n" << prefix << "}";
 	}
 };
-
 
 class TypAST: public BaseAST{
 public:
 	std::string typ;
-	void output(std::string) const override{
-		std::cout << typ;
+	void output(Ost &outstr, std::string) const override{
+		outstr << typ;
 	}
 };
 
 class BlockAST: public BaseAST{
 public:
 	std::unique_ptr<BaseAST> stmt;
-	void output(std::string prefix) const override{
-		std::cout << prefix << "BlkAST{\n";
-		stmt->output(prefix + INDENT);
-		std::cout << '\n' << prefix << "}";
+	void output(Ost &outstr, std::string prefix) const override{
+		outstr << prefix << "%entry:\n";
+		stmt->output(outstr, prefix + INDENT);
+		//outstr << '\n' << prefix << "}";
 	}
 };
 
 class StmtAST: public BaseAST{
 public:
 	int ret_val;
-	void output(std::string prefix) const override{
-		std::cout << "RET " << ret_val;
+	void output(Ost &outstr, std::string prefix) const override{
+		outstr << prefix << "ret " << ret_val;
 	}
 };
+
+} // namespace Ast_Defs
+
+} // namespace Ast_Base
+
+using namespace Ast_Base::Ast_Defs;
+
