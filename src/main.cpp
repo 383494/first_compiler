@@ -1,32 +1,25 @@
 #include <cassert>
+#include <cstdio>
 #include <fstream>
-#include <unordered_map>
+#include <iostream>
 
-using namespace std;
+extern FILE *yyin;
 
-std::unordered_map<char, const char *> generator = {
-    {'k', R"(fun @main(): i32 {
-%entry:
-  ret 0
-}
-)"},
-    {'r', R"(  .text
-  .globl main
-main:
-  li a0, 0
-  ret
-)"},
-    {'p', R"(  .text
-  .globl main
-main:
-  li a0, 0
-  ret
-)"},
-};
+#include "ast_defs.hpp"
+#include "sysy.tab.hpp"
 
 int main(int argc, const char *argv[]) {
-  assert(argc == 5);
-  ofstream ofs(argv[4]);
-  ofs << generator[argv[1][1]];
-  return 0;
+	assert(argc == 5);
+	auto inp = argv[2];
+
+	yyin = fopen(inp, "r");
+	
+	// parse input file
+	std::unique_ptr<BaseAST> ast;
+	auto ret = yyparse(ast);
+	assert(!ret);
+
+	ast->output("");
+	// dump AST
+	return 0;
 }
