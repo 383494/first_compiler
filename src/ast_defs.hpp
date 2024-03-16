@@ -6,7 +6,7 @@
 namespace Ast_Base{
 
 constexpr const char* INDENT = "  ";
-using Ost = std::ostream;
+using Ost = std::ostringstream;
 
 namespace Ast_Defs {
 
