@@ -14,6 +14,11 @@
 int yylex();
 void yyerror(std::unique_ptr<BaseAST> &ast, const char *s);
 
+template<typename T>
+std::unique_ptr<T> cast_ast(BaseAST *p){
+   return std::unique_ptr<T>((T*)p);
+}
+
 %}
 
 // 定义 parser 函数和错误处理函数的附加参数
@@ -41,7 +46,7 @@ void yyerror(std::unique_ptr<BaseAST> &ast, const char *s);
 CompUnit
 	: FuncDef {
 		auto comp_unit = std::make_unique<CompUnitAST>();
-		comp_unit->func_def = std::unique_ptr<BaseAST>($1);
+		comp_unit->func_def = cast_ast<FuncDefAST>($1);
 		ast = std::move(comp_unit);
 	}
 	;
@@ -49,9 +54,9 @@ CompUnit
 FuncDef
 	: FuncType IDENT '(' ')' Block {
 		auto ast = new FuncDefAST();
-		ast->func_typ = std::unique_ptr<BaseAST>($1);
+		ast->func_typ = cast_ast<TypAST>($1);
 		ast->ident = *std::unique_ptr<std::string>($2);
-		ast->block = std::unique_ptr<BaseAST>($5);
+		ast->block = cast_ast<BlockAST>($5);
 		$$ = ast;
 	}
 	;
@@ -67,7 +72,7 @@ FuncType
 Block
 	: '{' Stmt '}' {
 		auto ast = new BlockAST();
-		ast->stmt = std::unique_ptr<BaseAST>($2);
+		ast->stmt = cast_ast<StmtAST>($2);
 		$$ = ast;
 	}
 	;
@@ -75,7 +80,7 @@ Block
 Stmt
 	: RETURN Exp ';' {
 		auto ast = new StmtAST();
-		ast->ret_val = std::unique_ptr<BaseAST>($2);
+		ast->ret_val = cast_ast<ExpAST>($2);
 		$$ = ast;
 	}
 	;
@@ -83,7 +88,7 @@ Stmt
 Exp:
 	UnaryExp {
 		auto ast = new ExpAST();
-		ast->unary_exp = std::unique_ptr<BaseAST>($1);
+		ast->unary_exp = cast_ast<UnaryExpAST>($1);
 		$$ = ast;
 	}
 	;
@@ -91,7 +96,7 @@ Exp:
 PrimaryExp:
 	'(' Exp ')' { 
 		auto ast = new PrimaryExpAST();
-		ast->inside_exp = std::unique_ptr<BaseAST>($2);
+		ast->inside_exp = cast_ast<ExpAST>($2);
 		$$ = ast;
 	} | Number {
 		auto ast = new PrimaryExpAST();
@@ -102,12 +107,12 @@ PrimaryExp:
 UnaryExp:
 	PrimaryExp {
 		auto ast = new UnaryExpAST();
-		ast->unary_exp = std::unique_ptr<BaseAST>($1);
+		ast->unary_exp = cast_ast<UnaryExpAST>($1);
 		$$ = ast;
 	} | UnaryOp UnaryExp{
 		auto ast = new UnaryExpAST();
-		ast->unary_op = std::unique_ptr<BaseAST>($1);
-		ast->unary_exp = std::unique_ptr<BaseAST>($2);
+		ast->unary_op = cast_ast<UnaryOpAST>($1);
+		ast->unary_exp = cast_ast<UnaryExpAST>($2);
 		$$ = ast;
 	}
 	;

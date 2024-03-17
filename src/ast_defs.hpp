@@ -32,124 +32,72 @@ public:
 	virtual void output(Ost&, std::string) const = 0;
 };
 
+class CompUnitAST;
+class FuncDefAST;
+class TypAST;
+class BlockAST;
+class StmtAST;
+class ExpAST;
+class UnaryExpAST;
+class PrimaryExpAST;
+class UnaryOpAST;
+
 class CompUnitAST: public BaseAST{
 public:
-	std::unique_ptr<BaseAST> func_def;
-	void output(Ost &outstr, std::string prefix) const override{
-		//outstr << prefix << "CompUnit{\n";
-		func_def->output(outstr, prefix);
-		//outstr << '\n' << prefix << "}";
-	}
+	std::unique_ptr<FuncDefAST> func_def;
+	void output(Ost &outstr, std::string prefix) const override;
 };
 
 class FuncDefAST: public BaseAST{
 public:
-	std::unique_ptr<BaseAST> func_typ;
+	std::unique_ptr<TypAST> func_typ;
 	std::string ident;
-	std::unique_ptr<BaseAST> block;
-	void output(Ost &outstr, std::string prefix) const override{
-		outstr << prefix << "fun @" << ident << "():";
-		func_typ->output(outstr, "");
-		outstr << "{\n";
-		block->output(outstr, prefix + INDENT);
-		outstr << "\n" << prefix << "}\n";
-	}
+	std::unique_ptr<BlockAST> block;
+	void output(Ost &outstr, std::string prefix) const override;
 };
 
 class TypAST: public BaseAST{
 public:
 	std::string typ;
-	void output(Ost &outstr, std::string) const override{
-		outstr << typ;
-	}
+	void output(Ost &outstr, std::string) const override;
 };
 
 class BlockAST: public BaseAST{
 public:
-	std::unique_ptr<BaseAST> stmt;
-	void output(Ost &outstr, std::string prefix) const override{
-		outstr << prefix << "%entry:\n";
-		stmt->output(outstr, prefix + INDENT);
-		//outstr << '\n' << prefix << "}";
-	}
+	std::unique_ptr<StmtAST> stmt;
+	void output(Ost &outstr, std::string prefix) const override;
 };
 
 class StmtAST: public BaseAST{
 public:
-	std::unique_ptr<BaseAST> ret_val;
-	void output(Ost &outstr, std::string prefix) const override{
-		ret_val->output(outstr, prefix);
-		outstr << prefix << "ret %" << var_count-1;
-	}
+	std::unique_ptr<ExpAST> ret_val;
+	void output(Ost &outstr, std::string prefix) const override;
 };
 
 class ExpAST: public BaseAST{
 public:
-	std::unique_ptr<BaseAST> unary_exp;
-	void output(Ost& outstr, std::string prefix) const override{
-		unary_exp->output(outstr, prefix);
-	}
+	std::unique_ptr<UnaryExpAST> unary_exp;
+	void output(Ost& outstr, std::string prefix) const override;
 };
 
 class UnaryExpAST: public BaseAST{
 public:
-	std::optional<std::unique_ptr<BaseAST>> unary_op;
-	std::unique_ptr<BaseAST> unary_exp;
-	void output(Ost &outstr, std::string prefix) const override{
-		if(unary_op.has_value()){
-			unary_exp->output(outstr, prefix);
-			int now_var = var_count;
-			var_count++;
-			outstr << prefix << "%" << now_var << " = ";
-			(*unary_op)->output(outstr, "");
-			outstr << "%" << now_var-1 << "\n";
-		} else {
-			unary_exp->output(outstr, prefix);
-		}
-	}
+	std::optional<std::unique_ptr<UnaryOpAST>> unary_op;
+	std::unique_ptr<UnaryExpAST> unary_exp;
+	void output(Ost &outstr, std::string prefix) const override;
 };
 
 class PrimaryExpAST: public BaseAST{
 public:
-	std::variant<std::unique_ptr<BaseAST>, int> inside_exp;
-	void output(Ost &outstr, std::string prefix) const override{
-		switch(inside_exp.index()){
-			case 0:
-				std::get<0>(inside_exp)->output(outstr, prefix);
-			break;
-			case 1:
-				outstr << prefix << "%" << var_count << " = "
-					<< std::get<1>(inside_exp) << "\n";
-				var_count++;
-			break;
-			default:;
-		}
-	}
+	std::variant<std::unique_ptr<ExpAST>, int> inside_exp;
+	void output(Ost &outstr, std::string prefix) const override;
 };
 
 class UnaryOpAST: public BaseAST{
 public:
 	Op_type op;
-	UnaryOpAST(Op_type typ){
-		op = typ;
-	}
-	void output(Ost &outstr, std::string prefix) const override{
-		outstr << prefix;
-		switch(op){
-			case OP_ADD:
-				// do nothing
-			break;
-			case OP_SUB:
-				outstr << "sub 0, ";
-			break;
-			case OP_NOT:
-				outstr << "ne 0, ";
-			break;
-			default:
-				throw "UnaryOp type error";
-			break;
-		}
-	}
+	UnaryOpAST(Op_type typ){ op = typ; }
+	void output(Ost &outstr, std::string prefix) const override;
 };
 
 } // namespace Ast_Defs
