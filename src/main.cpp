@@ -18,7 +18,9 @@ extern char* optarg;
 extern int optind, opterr, optopt;
 static const struct option long_opt_args[] = {
 	{"koopa", no_argument, NULL, 1001},
+	{"k", no_argument, NULL, 1001},
 	{"riscv", no_argument, NULL, 1002},
+	{"r", no_argument, NULL, 1002},
 	{"output", required_argument, NULL, 1003},
 	{"o", required_argument, NULL, 1003},
 	{0, 0, 0, 0}
@@ -33,19 +35,19 @@ int main(int argc, char **argv) {
 		switch(now_opt){
 			case 1001:
 				output_koopa = true;
-				break;
+			break;
 			case 1002:
 				output_koopa = false;
-				break;
+			break;
 			case 1003:
 				outp = optarg;
-				break;
+			break;
 			case '?':
 				std::cerr << "I can't understand, so...\n";
 				std::cerr << "world.execute(me);\n";
 				return 114514;
 			default:
-				assert(0);
+			assert(0);
 		}
 	}
 
@@ -67,7 +69,7 @@ int main(int argc, char **argv) {
 	if(output_koopa){
 		if(outp.empty()){
 			std::cout << outstr;
-		} else {
+			} else {
 			std::ofstream outp_stream(outp);
 			outp_stream << outstr;
 		}

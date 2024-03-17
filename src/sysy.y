@@ -27,13 +27,13 @@ void yyerror(std::unique_ptr<BaseAST> &ast, const char *s);
 	BaseAST* ast_val;
 }
 
-// lexer 返回的所有 token 种类的声明
-// 注意 IDENT 和 INT_CONST 会返回 token 的值, 分别对应 str_val 和 int_val
 %token INT RETURN
+%token ADD SUB MUL DIV MOD NOT
 %token <str_val> IDENT
 %token <int_val> INT_CONST
 
 %type <ast_val> FuncDef FuncType Block Stmt
+%type <ast_val> PrimaryExp Exp UnaryExp UnaryOp
 %type <int_val> Number
 
 %%
@@ -73,11 +73,52 @@ Block
 	;
 
 Stmt
-	: RETURN Number ';' {
+	: RETURN Exp ';' {
 		auto ast = new StmtAST();
-		ast->ret_val = $2;
+		ast->ret_val = std::unique_ptr<BaseAST>($2);
 		$$ = ast;
 	}
+	;
+
+Exp:
+	UnaryExp {
+		auto ast = new ExpAST();
+		ast->unary_exp = std::unique_ptr<BaseAST>($1);
+		$$ = ast;
+	}
+	;
+
+PrimaryExp:
+	'(' Exp ')' { 
+		auto ast = new PrimaryExpAST();
+		ast->inside_exp = std::unique_ptr<BaseAST>($2);
+		$$ = ast;
+	} | Number {
+		auto ast = new PrimaryExpAST();
+		ast->inside_exp = $1;
+		$$ = ast;
+	};
+
+UnaryExp:
+	PrimaryExp {
+		auto ast = new UnaryExpAST();
+		ast->unary_exp = std::unique_ptr<BaseAST>($1);
+		$$ = ast;
+	} | UnaryOp UnaryExp{
+		auto ast = new UnaryExpAST();
+		ast->unary_op = std::unique_ptr<BaseAST>($1);
+		ast->unary_exp = std::unique_ptr<BaseAST>($2);
+		$$ = ast;
+	}
+	;
+
+UnaryOp:
+	ADD 	{ $$ = new UnaryOpAST(OP_ADD); } 
+	| SUB 	{ $$ = new UnaryOpAST(OP_SUB); }
+	| MUL	{ $$ = new UnaryOpAST(OP_MUL); }
+	| DIV	{ $$ = new UnaryOpAST(OP_DIV); }
+	| MOD	{ $$ = new UnaryOpAST(OP_MOD); }
+	| NOT	{ $$ = new UnaryOpAST(OP_NOT); }
 	;
 
 Number
@@ -88,8 +129,6 @@ Number
 
 %%
 
-// 定义错误处理函数, 其中第二个参数是错误信息
-// parser 如果发生错误 (例如输入的程序出现了语法错误), 就会调用这个函数
-void yyerror(std::unique_ptr<BaseAST> &ast, const char *s) {
-	std::cerr << "error: " << s << std::endl;
+void yyerror(std::unique_ptr<BaseAST> &ast, const char *err_info) {
+	std::cerr << "yyerror: " << err_info << std::endl;
 }
