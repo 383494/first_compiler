@@ -1,0 +1,2 @@
+cmake --build build_files
+cp build_files/compiler .

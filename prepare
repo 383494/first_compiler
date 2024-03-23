@@ -1,0 +1,4 @@
+#!/bin/bash
+
+rm build_files -r
+cmake -DCMAKE_BUILD_TYPE=Debug -B build_files

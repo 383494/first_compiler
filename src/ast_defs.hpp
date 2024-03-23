@@ -12,8 +12,6 @@ namespace Ast_Base{
 constexpr const char* INDENT = "  ";
 using Ost = std::ostringstream;
 
-extern int var_count;
-
 namespace Ast_Defs {
 
 enum Op_type{
@@ -83,7 +81,8 @@ public:
 class UnaryExpAST: public BaseAST{
 public:
 	std::optional<std::unique_ptr<UnaryOpAST>> unary_op;
-	std::unique_ptr<UnaryExpAST> unary_exp;
+	std::unique_ptr<BaseAST> unary_exp;
+	// UnartExpAST or PrimaryExpAST
 	void output(Ost &outstr, std::string prefix) const override;
 };
 

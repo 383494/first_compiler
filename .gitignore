@@ -4,8 +4,9 @@ cmake_install.cmake
 CMakeCache.txt
 Makefile
 /CMakeFiles
-/build/*
+/build_files/*
 /src/koopa.h
 compiler
 hello.*
 hello
+compile_flags

@@ -1,7 +1,38 @@
 #include "ast_defs.hpp"
+#include <stack>
 
 namespace Ast_Base{
+
 int var_count = 0;
+
+class Koopa_val{
+private:
+	int val;
+	bool is_im;
+public:
+	Koopa_val(bool typ, int x){
+		is_im = typ;
+		val = x;
+	}
+	std::string get_str(){
+		if(is_im){
+			return std::to_string(val);
+		} else {
+			return std::string("%") + std::to_string(val);
+		}
+	}
+	template<typename T>
+	friend T &operator<<(T &outstr, const Koopa_val& me){
+		if(me.is_im){
+			outstr << me.val;
+		} else {
+			outstr << "%" << me.val;
+		}
+		return outstr;
+	}
+};
+
+std::stack<Koopa_val> stmt_val;
 
 namespace Ast_Defs{
 
@@ -13,7 +44,7 @@ void FuncDefAST::output(Ost &outstr, std::string prefix) const {
 	outstr << prefix << "fun @" << ident << "():";
 	func_typ->output(outstr, "");
 	outstr << "{\n";
-	block->output(outstr, prefix + INDENT);
+	block->output(outstr, prefix);
 	outstr << "\n" << prefix << "}\n";
 }
 
@@ -28,7 +59,8 @@ void BlockAST::output(Ost &outstr, std::string prefix) const {
 
 void StmtAST::output(Ost &outstr, std::string prefix) const {
 	ret_val->output(outstr, prefix);
-	outstr << prefix << "ret %" << var_count-1;
+	outstr << prefix << "ret " << stmt_val.top();
+	stmt_val.pop();
 }
 
 void ExpAST::output(Ost& outstr, std::string prefix) const {
@@ -42,8 +74,11 @@ void UnaryExpAST::output(Ost &outstr, std::string prefix) const {
 		var_count++;
 		outstr << prefix << "%" << now_var << " = ";
 		(*unary_op)->output(outstr, "");
-		outstr << "%" << now_var-1 << "\n";
+		outstr << stmt_val.top() << "\n";
+		stmt_val.pop();
+		stmt_val.push(Koopa_val(false, now_var));
 	} else {
+		// primary_exp
 		unary_exp->output(outstr, prefix);
 	}
 }
@@ -54,9 +89,7 @@ void PrimaryExpAST::output(Ost &outstr, std::string prefix) const {
 			std::get<0>(inside_exp)->output(outstr, prefix);
 		break;
 		case 1:
-			outstr << prefix << "%" << var_count << " = "
-				<< std::get<1>(inside_exp) << "\n";
-			var_count++;
+			stmt_val.push(Koopa_val(true, std::get<1>(inside_exp)));
 		break;
 		default:;
 	}
@@ -66,7 +99,7 @@ void UnaryOpAST::output(Ost &outstr, std::string prefix) const {
 	outstr << prefix;
 	switch(op){
 		case OP_ADD:
-			// do nothing
+			outstr << "add 0, ";
 		break;
 		case OP_SUB:
 			outstr << "sub 0, ";
