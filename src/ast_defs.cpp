@@ -149,8 +149,12 @@ void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 	nxt_level->output(outstr, prefix);
 	Koopa_val rhs = stmt_val.top();
 	stmt_val.pop();
-	binary_op.value()->output(outstr, prefix);
+	int now_var = var_count;
+	var_count++;
+	outstr << prefix << "%" << now_var << " = ";
+	binary_op.value()->output(outstr, "");
 	outstr << lhs << ", " << rhs << '\n';
+	stmt_val.push(Koopa_val(false, now_var));
 }
 
 }   // namespace Ast_Defs
