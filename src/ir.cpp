@@ -94,10 +94,6 @@ void dfs_ir(const koopa_raw_binary_t &bin, Outp &outstr) {
 	case KOOPA_RBO_SUB:
 		outstr << "sub";
 		break;
-	case KOOPA_RBO_EQ:
-	case KOOPA_RBO_NOT_EQ:
-		outstr << "xor";
-		break;
 	case KOOPA_RBO_MUL:
 		outstr << "mul";
 		break;
@@ -105,7 +101,25 @@ void dfs_ir(const koopa_raw_binary_t &bin, Outp &outstr) {
 		outstr << "div";
 		break;
 	case KOOPA_RBO_MOD:
-		outstr << "mod";
+		outstr << "rem";
+		break;
+	case KOOPA_RBO_EQ:
+	case KOOPA_RBO_NOT_EQ:
+		outstr << "xor";
+		break;
+	case KOOPA_RBO_LE:
+	case KOOPA_RBO_GT:
+		outstr << "sgt";
+		break;
+	case KOOPA_RBO_GE:
+	case KOOPA_RBO_LT:
+		outstr << "slt";
+		break;
+	case KOOPA_RBO_AND:
+		outstr << "and";
+		break;
+	case KOOPA_RBO_OR:
+		outstr << "or";
 		break;
 	default:
 		std::cerr << "Unsupported binary operator: " << bin.op << '\n';
@@ -119,6 +133,8 @@ void dfs_ir(const koopa_raw_binary_t &bin, Outp &outstr) {
 		   << '\n';
 	switch(bin.op) {
 	case KOOPA_RBO_EQ:
+	case KOOPA_RBO_LE:
+	case KOOPA_RBO_GE:
 		outstr << "seqz t" << var_cnt << ", t" << var_cnt << '\n';
 		break;
 	case KOOPA_RBO_NOT_EQ:
