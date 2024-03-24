@@ -3,6 +3,7 @@
 	#include <string>
 }
 
+
 %{
 
 #include <iostream>
@@ -19,6 +20,7 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
    return std::unique_ptr<T>((T*)p);
 }
 
+
 %}
 
 // 定义 parser 函数和错误处理函数的附加参数
@@ -33,17 +35,22 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 }
 
 %token INT RETURN
-%token ADD SUB MUL DIV MOD NOT
+%token ADD SUB MUL DIV MOD
+%token LE LT GE GT EQ NEQ
+// logic and & or & not
+%token LNOT LAND LOR
 %token <str_val> IDENT
 %token <int_val> INT_CONST
 
 %type <ast_val> FuncDef FuncType Block Stmt
-%type <ast_val> PrimaryExp Exp UnaryExp AddExp MulExp
+%type <ast_val> PrimaryExp Exp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
 
-// All of them below are BINARY operators.
+// All below are BINARY operators.
 %type <ast_val> AddOp SubOp MulOp DivOp ModOp
+%type <ast_val> LeOp LtOp GeOp GtOp EqOp NeqOp
+%type <ast_val> LAndOp LOrOp
 
-%type <ast_val> UnaryOp Lv0Op Lv1Op
+%type <ast_val> UnaryOp Lv0Op Lv1Op Lv2Op Lv3Op Lv4Op Lv5Op
 %type <int_val> Number
 
 %%
@@ -91,9 +98,9 @@ Stmt
 	;
 
 Exp:
-	AddExp {
+	LOrExp {
 		auto ast = new ExpAST();
-		ast->binary_exp = cast_ast<BinaryExpAST<1>>($1);
+		ast->binary_exp = cast_ast<LOrExpAST>($1);
 		$$ = ast;
 	}
 	;
@@ -124,30 +131,43 @@ UnaryExp:
 	}
 	;
 
-AddOp: ADD	{ $$ = new BinaryOpAST(OP_ADD); } ;
-SubOp: SUB	{ $$ = new BinaryOpAST(OP_SUB); } ;
-MulOp: MUL	{ $$ = new BinaryOpAST(OP_MUL); } ;
-DivOp: DIV	{ $$ = new BinaryOpAST(OP_DIV); } ;
-ModOp: MOD	{ $$ = new BinaryOpAST(OP_MOD); } ;
+AddOp: ADD		{ $$ = new BinaryOpAST(OP_ADD); } ;
+SubOp: SUB		{ $$ = new BinaryOpAST(OP_SUB); } ;
+MulOp: MUL		{ $$ = new BinaryOpAST(OP_MUL); } ;
+DivOp: DIV		{ $$ = new BinaryOpAST(OP_DIV); } ;
+ModOp: MOD		{ $$ = new BinaryOpAST(OP_MOD); } ;
+GtOp: GT 		{ $$ = new BinaryOpAST(OP_GT); } ;
+GeOp: GE 		{ $$ = new BinaryOpAST(OP_GE); } ;
+LtOp: LT 		{ $$ = new BinaryOpAST(OP_LT); } ;
+LeOp: LE 		{ $$ = new BinaryOpAST(OP_LE); } ;
+EqOp: EQ 		{ $$ = new BinaryOpAST(OP_EQ); } ;
+NeqOp: NEQ 		{ $$ = new BinaryOpAST(OP_NEQ); } ;
+LAndOp: LAND 	{ $$ = new BinaryOpAST(OP_LAND); } ;
+LOrOp: LOR 		{ $$ = new BinaryOpAST(OP_LOR); } ;
+
 
 UnaryOp: 
 	ADD 	{ $$ = new UnaryOpAST(OP_ADD); }
 	| SUB 	{ $$ = new UnaryOpAST(OP_SUB); }
-	| NOT 	{ $$ = new UnaryOpAST(OP_NOT); }
+	| LNOT 	{ $$ = new UnaryOpAST(OP_LNOT); }
 	;
 
-Lv1Op: AddOp | SubOp ;
 Lv0Op: MulOp | DivOp | ModOp ;
+Lv1Op: AddOp | SubOp ;
+Lv2Op: GeOp | GtOp | LeOp | LtOp ;
+Lv3Op: EqOp | NeqOp ;
+Lv4Op: LAndOp ;
+Lv5Op: LOrOp ;
 
 MulExp:
 	UnaryExp {
-		auto ast = new BinaryExpAST<0>();
+		auto ast = new MulExpAST();
 		ast->nxt_level = cast_ast<UnaryExpAST>($1);
 		$$ = ast;
 	}
 	| MulExp Lv0Op UnaryExp {
-		auto ast = new BinaryExpAST<0>();
-		ast->now_level = cast_ast<BinaryExpAST<0>>($1);
+		auto ast = new MulExpAST();
+		ast->now_level = cast_ast<MulExpAST>($1);
 		ast->binary_op = cast_ast<BinaryOpAST>($2);
 		ast->nxt_level = cast_ast<UnaryExpAST>($3);
 		$$ = ast;
@@ -157,13 +177,55 @@ MulExp:
 AddExp:
 	MulExp
 	| AddExp Lv1Op MulExp {
-		auto ast = new BinaryExpAST<1>();
-		ast->now_level = cast_ast<BinaryExpAST<1>>($1);
+		auto ast = new AddExpAST();
+		ast->now_level = cast_ast<AddExpAST>($1);
 		ast->binary_op = cast_ast<BinaryOpAST>($2);
-		ast->nxt_level = cast_ast<BinaryExpAST<0>>($3);
+		ast->nxt_level = cast_ast<MulExpAST>($3);
 		$$ = ast;
 	} 
 	;
+
+RelExp:
+	AddExp
+	| RelExp Lv2Op AddExp {
+		auto ast = new RelExpAST();
+		ast->now_level = cast_ast<RelExpAST>($1);
+		ast->binary_op = cast_ast<BinaryOpAST>($2);
+		ast->nxt_level = cast_ast<AddExpAST>($3);
+		$$ = ast;
+	}
+	;
+
+EqExp:
+	RelExp
+	| EqExp Lv3Op RelExp {
+		auto ast = new EqExpAST();
+		ast->now_level = cast_ast<EqExpAST>($1);
+		ast->binary_op = cast_ast<BinaryOpAST>($2);
+		ast->nxt_level = cast_ast<RelExpAST>($3);
+		$$ = ast;
+	};
+
+LAndExp:
+	EqExp
+	| LAndExp Lv4Op EqExp {
+		auto ast = new LAndExpAST();
+		ast->now_level = cast_ast<LAndExpAST>($1);
+		ast->binary_op = cast_ast<BinaryOpAST>($2);
+		ast->nxt_level = cast_ast<EqExpAST>($3);
+		$$ = ast;
+	};
+
+LOrExp:
+	LAndExp
+	| LOrExp Lv5Op LAndExp {
+		auto ast = new LOrExpAST();
+		ast->now_level = cast_ast<LOrExpAST>($1);
+		ast->binary_op = cast_ast<BinaryOpAST>($2);
+		ast->nxt_level = cast_ast<LAndExpAST>($3);
+		$$ = ast;
+	};
+
 
 Number
 	: INT_CONST

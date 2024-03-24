@@ -37,6 +37,8 @@ std::stack<Koopa_val> stmt_val;
 
 namespace Ast_Defs {
 
+template class BinaryExpAST_Base<BinaryExpAST<0>, UnaryExpAST>;
+
 void CompUnitAST::output(Ost& outstr, std::string prefix) const {
 	func_def->output(outstr, prefix);
 }
@@ -106,13 +108,17 @@ void UnaryOpAST::output(Ost& outstr, std::string prefix) const {
 	case OP_SUB:
 		outstr << "sub 0, ";
 		break;
-	case OP_NOT:
-		outstr << "ne 0, ";
+	case OP_LNOT:
+		outstr << "eq 0, ";
 		break;
 	default:
 		assert(0);
 		break;
 	}
+}
+
+bool BinaryOpAST::is_logic_op() {
+	return op == OP_LAND || op == OP_LOR;
 }
 
 void BinaryOpAST::output(Ost& outstr, std::string prefix) const {
@@ -133,8 +139,31 @@ void BinaryOpAST::output(Ost& outstr, std::string prefix) const {
 	case OP_MOD:
 		outstr << "mod ";
 		break;
-	default:
-		assert(0);
+	case OP_GT:
+		outstr << "gt ";
+		break;
+	case OP_GE:
+		outstr << "ge ";
+		break;
+	case OP_LT:
+		outstr << "lt ";
+		break;
+	case OP_LE:
+		outstr << "le ";
+		break;
+	case OP_EQ:
+		outstr << "eq ";
+		break;
+	case OP_NEQ:
+		outstr << "ne ";
+		break;
+	case OP_LAND:
+		outstr << "and ";
+		break;
+	case OP_LOR:
+		outstr << "or ";
+		break;
+	default: assert(0);
 	}
 }
 
@@ -149,6 +178,16 @@ void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 	nxt_level->output(outstr, prefix);
 	Koopa_val rhs = stmt_val.top();
 	stmt_val.pop();
+	if(binary_op.value()->is_logic_op()){
+		int now_var = var_count;
+		var_count++;
+		outstr << prefix << "%" << now_var << " = ne 0, " << lhs;
+		lhs = Koopa_val(false, now_var);
+		now_var = var_count;
+		var_count++;
+		outstr << prefix << "%" << now_var << " = ne 0, " << rhs;
+		rhs = Koopa_val(false, now_var);
+	}
 	int now_var = var_count;
 	var_count++;
 	outstr << prefix << "%" << now_var << " = ";
@@ -161,6 +200,6 @@ void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 }   // namespace Ast_Base
 
 auto init_hook = []() {
-	BinaryExpAST<1>::instantiate();
+	BinaryExpAST<Ast_Base::BINARY_EXP_MAX_LEVEL>::instantiate();
 	return 0;
 }();

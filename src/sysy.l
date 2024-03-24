@@ -44,7 +44,18 @@ Hexadecimal		0[xX][0-9a-fA-F]+
 "*"					{ return MUL; }
 "/"					{ return DIV; }
 "%"					{ return MOD; }
-"!"					{ return NOT; }
+
+"<="				{ return LE; }
+"<"					{ return LT;}
+">="				{ return GE; }
+">"					{ return GT; }
+"=="				{ return EQ; }
+"!="				{ return NEQ; }
+
+"&&"				{ return LAND; }
+"||"				{ return LOR; }
+"!"					{ return LNOT; }
+
 
 {Identifier}    { yylval.str_val = new std::string(yytext); return IDENT; }
 

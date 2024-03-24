@@ -11,6 +11,7 @@ namespace Ast_Base {
 
 constexpr const char *INDENT = "  ";
 using Ost = std::ostringstream;
+constexpr int BINARY_EXP_MAX_LEVEL = 5;
 
 namespace Ast_Defs {
 
@@ -20,7 +21,15 @@ enum Op_type {
 	OP_MUL,
 	OP_DIV,
 	OP_MOD,
-	OP_NOT,
+	OP_GT,
+	OP_GE,
+	OP_LT,
+	OP_LE,
+	OP_EQ,
+	OP_NEQ,
+	OP_LAND,
+	OP_LOR,
+	OP_LNOT
 };
 
 class BaseAST {
@@ -82,7 +91,7 @@ public:
 
 class ExpAST : public BaseAST {
 public:
-	std::unique_ptr<BinaryExpAST<1>> binary_exp;
+	std::unique_ptr<BinaryExpAST<BINARY_EXP_MAX_LEVEL>> binary_exp;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -109,6 +118,7 @@ public:
 class BinaryOpAST : public OpAST {
 public:
 	using OpAST::OpAST;
+	bool is_logic_op();
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -125,7 +135,7 @@ template<int level>
 class BinaryExpAST : public BinaryExpAST_Base<BinaryExpAST<level>, BinaryExpAST<level - 1>> {
 public:
 	static void instantiate() {
-		BinaryExpAST<level> sth;
+		BinaryExpAST<level> initer;
 		BinaryExpAST<level - 1>::instantiate();
 	}
 };
@@ -136,7 +146,12 @@ public:
 	static void instantiate() {}
 };
 
-template class BinaryExpAST_Base<BinaryExpAST<0>, UnaryExpAST>;
+using MulExpAST = BinaryExpAST<0>;
+using AddExpAST = BinaryExpAST<1>;
+using RelExpAST = BinaryExpAST<2>;
+using EqExpAST  = BinaryExpAST<3>;
+using LAndExpAST = BinaryExpAST<4>;
+using LOrExpAST = BinaryExpAST<5>;
 
 }   // namespace Ast_Defs
 
