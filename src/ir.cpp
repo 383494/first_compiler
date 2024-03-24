@@ -98,8 +98,17 @@ void dfs_ir(const koopa_raw_binary_t &bin, Outp &outstr) {
 	case KOOPA_RBO_NOT_EQ:
 		outstr << "xor";
 		break;
+	case KOOPA_RBO_MUL:
+		outstr << "mul";
+		break;
+	case KOOPA_RBO_DIV:
+		outstr << "div";
+		break;
+	case KOOPA_RBO_MOD:
+		outstr << "mod";
+		break;
 	default:
-		std::clog << bin.op;
+		std::cerr << "Unsupported binary operator: " << bin.op << '\n';
 		assert(0);
 	}
 	outstr << " t" << var_cnt
