@@ -1,29 +1,30 @@
 #include "ast_defs.hpp"
 #include <stack>
 
-namespace Ast_Base{
+namespace Ast_Base {
 
 int var_count = 0;
 
-class Koopa_val{
+class Koopa_val {
 private:
 	int val;
 	bool is_im;
+
 public:
-	Koopa_val(bool typ, int x){
+	Koopa_val(bool typ, int x) {
 		is_im = typ;
 		val = x;
 	}
-	std::string get_str(){
-		if(is_im){
+	std::string get_str() {
+		if(is_im) {
 			return std::to_string(val);
 		} else {
 			return std::string("%") + std::to_string(val);
 		}
 	}
 	template<typename T>
-	friend T &operator<<(T &outstr, const Koopa_val& me){
-		if(me.is_im){
+	friend T& operator<<(T& outstr, const Koopa_val& me) {
+		if(me.is_im) {
 			outstr << me.val;
 		} else {
 			outstr << "%" << me.val;
@@ -34,30 +35,31 @@ public:
 
 std::stack<Koopa_val> stmt_val;
 
-namespace Ast_Defs{
+namespace Ast_Defs {
 
-void CompUnitAST::output(Ost &outstr, std::string prefix) const {
+void CompUnitAST::output(Ost& outstr, std::string prefix) const {
 	func_def->output(outstr, prefix);
 }
 
-void FuncDefAST::output(Ost &outstr, std::string prefix) const {
+void FuncDefAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix << "fun @" << ident << "():";
 	func_typ->output(outstr, "");
 	outstr << "{\n";
 	block->output(outstr, prefix);
-	outstr << "\n" << prefix << "}\n";
+	outstr << "\n"
+		   << prefix << "}\n";
 }
 
-void TypAST::output(Ost &outstr, std::string) const {
+void TypAST::output(Ost& outstr, std::string) const {
 	outstr << typ;
 }
 
-void BlockAST::output(Ost &outstr, std::string prefix) const {
+void BlockAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix << "%entry:\n";
 	stmt->output(outstr, prefix + INDENT);
 }
 
-void StmtAST::output(Ost &outstr, std::string prefix) const {
+void StmtAST::output(Ost& outstr, std::string prefix) const {
 	ret_val->output(outstr, prefix);
 	outstr << prefix << "ret " << stmt_val.top();
 	stmt_val.pop();
@@ -67,8 +69,8 @@ void ExpAST::output(Ost& outstr, std::string prefix) const {
 	binary_exp->output(outstr, prefix);
 }
 
-void UnaryExpAST::output(Ost &outstr, std::string prefix) const {
-	if(unary_op.has_value()){
+void UnaryExpAST::output(Ost& outstr, std::string prefix) const {
+	if(unary_op.has_value()) {
 		unary_exp->output(outstr, prefix);
 		int now_var = var_count;
 		var_count++;
@@ -83,61 +85,62 @@ void UnaryExpAST::output(Ost &outstr, std::string prefix) const {
 	}
 }
 
-void PrimaryExpAST::output(Ost &outstr, std::string prefix) const {
-	switch(inside_exp.index()){
-		case 0:
-			std::get<0>(inside_exp)->output(outstr, prefix);
+void PrimaryExpAST::output(Ost& outstr, std::string prefix) const {
+	switch(inside_exp.index()) {
+	case 0:
+		std::get<0>(inside_exp)->output(outstr, prefix);
 		break;
-		case 1:
-			stmt_val.push(Koopa_val(true, std::get<1>(inside_exp)));
+	case 1:
+		stmt_val.push(Koopa_val(true, std::get<1>(inside_exp)));
 		break;
-		default:;
+	default:;
 	}
 }
 
-void UnaryOpAST::output(Ost &outstr, std::string prefix) const {
+void UnaryOpAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix;
-	switch(op){
-		case OP_ADD:
-			outstr << "add 0, ";
+	switch(op) {
+	case OP_ADD:
+		outstr << "add 0, ";
 		break;
-		case OP_SUB:
-			outstr << "sub 0, ";
+	case OP_SUB:
+		outstr << "sub 0, ";
 		break;
-		case OP_NOT:
-			outstr << "ne 0, ";
+	case OP_NOT:
+		outstr << "ne 0, ";
 		break;
-		default:
-			assert(0);
+	default:
+		assert(0);
 		break;
 	}
 }
 
-void BinaryOpAST::output(Ost &outstr, std::string prefix) const {
+void BinaryOpAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix;
-	switch(op){
-		case OP_ADD:
-			outstr << "add ";
+	switch(op) {
+	case OP_ADD:
+		outstr << "add ";
 		break;
-		case OP_SUB:
-			outstr << "sub ";
+	case OP_SUB:
+		outstr << "sub ";
 		break;
-		case OP_MUL:
-			outstr << "mul ";
+	case OP_MUL:
+		outstr << "mul ";
 		break;
-		case OP_DIV:
-			outstr << "div ";
+	case OP_DIV:
+		outstr << "div ";
 		break;
-		case OP_MOD:
-			outstr << "mod ";
+	case OP_MOD:
+		outstr << "mod ";
 		break;
-		default: assert(0);
+	default:
+		assert(0);
 	}
 }
 
 template<typename T, typename U>
-void BinaryExpAST_Base<T, U>::output(Ost &outstr, std::string prefix) const {
-	if(!binary_op.has_value()){
+void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
+	if(!binary_op.has_value()) {
 		return nxt_level->output(outstr, prefix);
 	}
 	now_level.value()->output(outstr, prefix);
@@ -150,9 +153,10 @@ void BinaryExpAST_Base<T, U>::output(Ost &outstr, std::string prefix) const {
 	outstr << lhs << ", " << rhs << '\n';
 }
 
-// void BinaryExpAST<0>::output(Ost &outstr, std::string prefix) const {
-// }
+}   // namespace Ast_Defs
+}   // namespace Ast_Base
 
-
-}
-}
+auto init_hook = []() {
+	BinaryExpAST<1>::instantiate();
+	return 0;
+}();
