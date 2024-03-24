@@ -38,7 +38,12 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 %token <int_val> INT_CONST
 
 %type <ast_val> FuncDef FuncType Block Stmt
-%type <ast_val> PrimaryExp Exp UnaryExp UnaryOp
+%type <ast_val> PrimaryExp Exp UnaryExp AddExp MulExp
+
+// All of them below are BINARY operators.
+%type <ast_val> AddOp SubOp MulOp DivOp ModOp
+
+%type <ast_val> UnaryOp Lv0Op Lv1Op
 %type <int_val> Number
 
 %%
@@ -86,9 +91,9 @@ Stmt
 	;
 
 Exp:
-	UnaryExp {
+	AddExp {
 		auto ast = new ExpAST();
-		ast->unary_exp = cast_ast<UnaryExpAST>($1);
+		ast->binary_exp = cast_ast<BinaryExpAST<1>>($1);
 		$$ = ast;
 	}
 	;
@@ -98,7 +103,8 @@ PrimaryExp:
 		auto ast = new PrimaryExpAST();
 		ast->inside_exp = cast_ast<ExpAST>($2);
 		$$ = ast;
-	} | Number {
+	}
+	| Number {
 		auto ast = new PrimaryExpAST();
 		ast->inside_exp = $1;
 		$$ = ast;
@@ -109,7 +115,8 @@ UnaryExp:
 		auto ast = new UnaryExpAST();
 		ast->unary_exp = cast_ast<UnaryExpAST>($1);
 		$$ = ast;
-	} | UnaryOp UnaryExp{
+	}
+	| UnaryOp UnaryExp{
 		auto ast = new UnaryExpAST();
 		ast->unary_op = cast_ast<UnaryOpAST>($1);
 		ast->unary_exp = cast_ast<UnaryExpAST>($2);
@@ -117,19 +124,49 @@ UnaryExp:
 	}
 	;
 
-UnaryOp:
-	ADD 	{ $$ = new UnaryOpAST(OP_ADD); } 
+AddOp: ADD	{ $$ = new BinaryOpAST(OP_ADD); } ;
+SubOp: SUB	{ $$ = new BinaryOpAST(OP_SUB); } ;
+MulOp: MUL	{ $$ = new BinaryOpAST(OP_MUL); } ;
+DivOp: DIV	{ $$ = new BinaryOpAST(OP_DIV); } ;
+ModOp: MOD	{ $$ = new BinaryOpAST(OP_MOD); } ;
+
+UnaryOp: 
+	ADD 	{ $$ = new UnaryOpAST(OP_ADD); }
 	| SUB 	{ $$ = new UnaryOpAST(OP_SUB); }
-	| MUL	{ $$ = new UnaryOpAST(OP_MUL); }
-	| DIV	{ $$ = new UnaryOpAST(OP_DIV); }
-	| MOD	{ $$ = new UnaryOpAST(OP_MOD); }
-	| NOT	{ $$ = new UnaryOpAST(OP_NOT); }
+	| NOT 	{ $$ = new UnaryOpAST(OP_NOT); }
+	;
+
+Lv1Op: AddOp | SubOp ;
+Lv0Op: MulOp | DivOp | ModOp ;
+
+MulExp:
+	UnaryExp {
+		auto ast = new BinaryExpAST<0>();
+		ast->nxt_level = cast_ast<UnaryExpAST>($1);
+		$$ = ast;
+	}
+	| MulExp Lv0Op UnaryExp {
+		auto ast = new BinaryExpAST<0>();
+		ast->now_level = cast_ast<BinaryExpAST<0>>($1);
+		ast->binary_op = cast_ast<BinaryOpAST>($2);
+		ast->nxt_level = cast_ast<UnaryExpAST>($3);
+		$$ = ast;
+	}
+	;
+
+AddExp:
+	MulExp
+	| AddExp Lv1Op MulExp {
+		auto ast = new BinaryExpAST<1>();
+		ast->now_level = cast_ast<BinaryExpAST<1>>($1);
+		ast->binary_op = cast_ast<BinaryOpAST>($2);
+		ast->nxt_level = cast_ast<BinaryExpAST<0>>($3);
+		$$ = ast;
+	} 
 	;
 
 Number
-	: INT_CONST {
-		$$ = $1;
-	}
+	: INT_CONST
 	;
 
 %%

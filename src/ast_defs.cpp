@@ -64,7 +64,7 @@ void StmtAST::output(Ost &outstr, std::string prefix) const {
 }
 
 void ExpAST::output(Ost& outstr, std::string prefix) const {
-	unary_exp->output(outstr, prefix);
+	binary_exp->output(outstr, prefix);
 }
 
 void UnaryExpAST::output(Ost &outstr, std::string prefix) const {
@@ -108,9 +108,51 @@ void UnaryOpAST::output(Ost &outstr, std::string prefix) const {
 			outstr << "ne 0, ";
 		break;
 		default:
-			throw "UnaryOp type error";
+			assert(0);
 		break;
 	}
 }
+
+void BinaryOpAST::output(Ost &outstr, std::string prefix) const {
+	outstr << prefix;
+	switch(op){
+		case OP_ADD:
+			outstr << "add ";
+		break;
+		case OP_SUB:
+			outstr << "sub ";
+		break;
+		case OP_MUL:
+			outstr << "mul ";
+		break;
+		case OP_DIV:
+			outstr << "div ";
+		break;
+		case OP_MOD:
+			outstr << "mod ";
+		break;
+		default: assert(0);
+	}
+}
+
+template<typename T, typename U>
+void BinaryExpAST_Base<T, U>::output(Ost &outstr, std::string prefix) const {
+	if(!binary_op.has_value()){
+		return nxt_level->output(outstr, prefix);
+	}
+	now_level.value()->output(outstr, prefix);
+	Koopa_val lhs = stmt_val.top();
+	stmt_val.pop();
+	nxt_level->output(outstr, prefix);
+	Koopa_val rhs = stmt_val.top();
+	stmt_val.pop();
+	binary_op.value()->output(outstr, prefix);
+	outstr << lhs << ", " << rhs << '\n';
+}
+
+// void BinaryExpAST<0>::output(Ost &outstr, std::string prefix) const {
+// }
+
+
 }
 }
