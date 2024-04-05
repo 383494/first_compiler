@@ -36,6 +36,7 @@ Hexadecimal		0[xX][0-9a-fA-F]+
 {LineComment}		{ }
 {MultiLineComment}	{ }
 
+"const" 			{ return CONST; }
 "int"				{ return INT; }
 "return"			{ return RETURN; }
 

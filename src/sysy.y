@@ -34,7 +34,7 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 	BaseAST* ast_val;
 }
 
-%token INT RETURN
+%token INT RETURN CONST
 %token ADD SUB MUL DIV MOD
 %token LE LT GE GT EQ NEQ
 // logic and & or & not
@@ -42,8 +42,9 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 %token <str_val> IDENT
 %token <int_val> INT_CONST
 
-%type <ast_val> FuncDef FuncType Block Stmt
-%type <ast_val> PrimaryExp Exp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
+%type <ast_val> FuncDef FuncType Block BlockItemList BlockItem Stmt 
+%type <ast_val> Decl ConstDecl BType ConstDef ConstDefList ConstInitVal LVal
+%type <ast_val> PrimaryExp ConstExp Exp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
 
 // All below are BINARY operators.
 %type <ast_val> AddOp SubOp MulOp DivOp ModOp
@@ -82,12 +83,72 @@ FuncType
 	;
 
 Block
-	: '{' Stmt '}' {
+	: '{' BlockItemList '}' {
+		$$ = $2;
+	}
+	;
+
+BlockItemList
+	: BlockItemList BlockItem {
+		((BlockAST*)$1)->items.push_back(cast_ast<BlockItemAST>($2));
+		$$ = $1;
+	} | BlockItem {
 		auto ast = new BlockAST();
-		ast->stmt = cast_ast<StmtAST>($2);
+		ast->items.push_back(cast_ast<BlockItemAST>($1));
 		$$ = ast;
 	}
 	;
+
+BlockItem:
+	Decl {
+		auto ast = new BlockItemAST();
+		ast->item = cast_ast<DeclAST>($1);
+		$$ = ast;
+	} | Stmt {
+		auto ast = new BlockItemAST();
+		ast->item = cast_ast<StmtAST>($1);
+		$$ = ast;
+	};
+	
+Decl:
+	ConstDecl;
+
+ConstDecl:
+	CONST BType ConstDefList ';' {
+		((ConstDeclAST*)$3)->typ = cast_ast<BTypeAST>($2);
+		$$ = $3;
+	};
+
+ConstDefList:
+	ConstDefList ConstDef {
+		auto ast = (ConstDeclAST*)$1;
+		ast->defs.push_back(cast_ast<ConstDefAST>($2));
+		$$ = ast;
+	} | ConstDef {
+		auto ast = new ConstDeclAST();
+		ast->defs.push_back(cast_ast<ConstDefAST>($1));
+		$$ = ast;
+	};
+
+ConstDef:
+	IDENT '=' ConstInitVal {
+		auto ast = new ConstDefAST();
+		ast->ident = *$1;
+		ast->val = cast_ast<ConstInitValAST>($3);
+		$$ = ast;
+	};
+
+ConstInitVal:
+	ConstExp;
+
+ConstExp:
+	Exp;
+
+BType:
+	INT {
+		auto ast = new BTypeAST();
+		$$ = ast;
+	};
 
 Stmt
 	: RETURN Exp ';' {
@@ -96,6 +157,13 @@ Stmt
 		$$ = ast;
 	}
 	;
+
+LVal:
+	IDENT {
+		auto ast = new LValAST();
+		ast->ident = *$1;
+		$$ = ast;
+	};
 
 Exp:
 	LOrExp {
@@ -109,6 +177,11 @@ PrimaryExp:
 	'(' Exp ')' { 
 		auto ast = new PrimaryExpAST();
 		ast->inside_exp = cast_ast<ExpAST>($2);
+		$$ = ast;
+	}
+	| LVal {
+		auto ast = new PrimaryExpAST();
+		ast->inside_exp = cast_ast<LValAST>($1);
 		$$ = ast;
 	}
 	| Number {

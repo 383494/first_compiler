@@ -1,5 +1,4 @@
 #include "ast_defs.hpp"
-#include <stack>
 
 namespace Ast_Base {
 
@@ -58,7 +57,9 @@ void TypAST::output(Ost& outstr, std::string) const {
 
 void BlockAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix << "%entry:\n";
-	stmt->output(outstr, prefix + INDENT);
+	for(auto &i:items){
+		i->output(outstr, prefix + INDENT);
+	}
 }
 
 void StmtAST::output(Ost& outstr, std::string prefix) const {
@@ -73,6 +74,7 @@ void ExpAST::output(Ost& outstr, std::string prefix) const {
 
 void UnaryExpAST::output(Ost& outstr, std::string prefix) const {
 	if(unary_op.has_value()) {
+		// unary_exp
 		unary_exp->output(outstr, prefix);
 		int now_var = var_count;
 		var_count++;
@@ -93,7 +95,10 @@ void PrimaryExpAST::output(Ost& outstr, std::string prefix) const {
 		std::get<0>(inside_exp)->output(outstr, prefix);
 		break;
 	case 1:
-		stmt_val.push(Koopa_val(true, std::get<1>(inside_exp)));
+		std::get<1>(inside_exp)->output(outstr, prefix);
+		break;
+	case 2:
+		stmt_val.push(Koopa_val(true, std::get<2>(inside_exp)));
 		break;
 	default:;
 	}
@@ -178,7 +183,7 @@ void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 	nxt_level->output(outstr, prefix);
 	Koopa_val rhs = stmt_val.top();
 	stmt_val.pop();
-	if(binary_op.value()->is_logic_op()){
+	if(binary_op.value()->is_logic_op()) {
 		int now_var = var_count;
 		var_count++;
 		outstr << prefix << "%" << now_var << " = ne 0, " << lhs;
@@ -198,8 +203,3 @@ void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 
 }   // namespace Ast_Defs
 }   // namespace Ast_Base
-
-auto init_hook = []() {
-	BinaryExpAST<Ast_Base::BINARY_EXP_MAX_LEVEL>::instantiate();
-	return 0;
-}();

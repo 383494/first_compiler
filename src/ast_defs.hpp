@@ -1,9 +1,11 @@
 #pragma once
 #include <cassert>
 #include <iostream>
+#include <list>
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <stack>
 #include <string>
 #include <variant>
 
@@ -44,16 +46,25 @@ public:
 	OpAST(Op_type typ) { op = typ; }
 };
 
-class CompUnitAST;
-class FuncDefAST;
-class TypAST;
+class BTypeAST;
+class BinaryOpAST;
 class BlockAST;
-class StmtAST;
+class BlockItemAST;
+class CompUnitAST;
+class ConstDeclAST;
+class ConstDefAST;
+class ConstExpAST;
+class ConstInitValAST;
+class DeclAST;
 class ExpAST;
+class FuncDefAST;
+class LValAST;
+class PrimaryExpAST;
+class StmtAST;
+class TypAST;
 class UnaryExpAST;
 class UnaryOpAST;
-class PrimaryExpAST;
-class BinaryOpAST;
+
 template<int>
 class BinaryExpAST;
 
@@ -79,7 +90,13 @@ public:
 
 class BlockAST : public BaseAST {
 public:
-	std::unique_ptr<StmtAST> stmt;
+	std::list<std::unique_ptr<BlockItemAST>> items;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class BlockItemAST : public BaseAST {
+public:
+	std::variant<std::unique_ptr<DeclAST>, std::unique_ptr<StmtAST>> item;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -105,7 +122,7 @@ public:
 
 class PrimaryExpAST : public BaseAST {
 public:
-	std::variant<std::unique_ptr<ExpAST>, int> inside_exp;
+	std::variant<std::unique_ptr<ExpAST>, std::unique_ptr<LValAST>, int> inside_exp;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -132,26 +149,62 @@ public:
 };
 
 template<int level>
-class BinaryExpAST : public BinaryExpAST_Base<BinaryExpAST<level>, BinaryExpAST<level - 1>> {
-public:
-	static void instantiate() {
-		BinaryExpAST<level> initer;
-		BinaryExpAST<level - 1>::instantiate();
-	}
-};
+class BinaryExpAST : public BinaryExpAST_Base<BinaryExpAST<level>, BinaryExpAST<level - 1>> {};
 
 template<>
-class BinaryExpAST<0> : public BinaryExpAST_Base<BinaryExpAST<0>, UnaryExpAST> {
+class BinaryExpAST<0> : public BinaryExpAST_Base<BinaryExpAST<0>, UnaryExpAST> {};
+
+// clang-format off
+using MulExpAST = BinaryExpAST<0>;
+using AddExpAST = BinaryExpAST<1>; template class BinaryExpAST<1>;
+using RelExpAST = BinaryExpAST<2>; template class BinaryExpAST<2>;
+using EqExpAST = BinaryExpAST<3>; template class BinaryExpAST<3>;
+using LAndExpAST = BinaryExpAST<4>; template class BinaryExpAST<4>;
+using LOrExpAST = BinaryExpAST<5>; template class BinaryExpAST<5>;
+// clang-format on
+
+class DeclAST : public BaseAST {
 public:
-	static void instantiate() {}
+	std::unique_ptr<ConstDeclAST> const_decl_ast;
+	void output(Ost &outstr, std::string prefix) const override;
 };
 
-using MulExpAST = BinaryExpAST<0>;
-using AddExpAST = BinaryExpAST<1>;
-using RelExpAST = BinaryExpAST<2>;
-using EqExpAST  = BinaryExpAST<3>;
-using LAndExpAST = BinaryExpAST<4>;
-using LOrExpAST = BinaryExpAST<5>;
+class ConstDeclAST : public BaseAST {
+public:
+	std::unique_ptr<BTypeAST> typ;
+	std::list<std::unique_ptr<ConstDefAST>> defs;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class BTypeAST : public BaseAST {
+public:
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class ConstDefAST : public BaseAST {
+public:
+	std::string ident;
+	std::unique_ptr<ConstInitValAST> val;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class ConstInitValAST : public BaseAST {
+public:
+	std::unique_ptr<ConstExpAST> exp;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class ConstExpAST : public BaseAST {
+public:
+	std::unique_ptr<ExpAST> exp;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class LValAST : public BaseAST {
+public:
+	std::string ident;
+	void output(Ost &outstr, std::string prefix) const override;
+};
 
 }   // namespace Ast_Defs
 

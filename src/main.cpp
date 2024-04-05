@@ -12,7 +12,7 @@ extern FILE *yyin;
 
 #include "ast_defs.hpp"
 #include "ir.hpp"
-#include "sysy.tab.hpp"
+extern int yyparse(std::unique_ptr<BaseAST>&);
 
 extern char *optarg;
 extern int optind, opterr, optopt;
