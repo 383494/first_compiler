@@ -30,7 +30,8 @@ bool output_koopa = false;
 int main(int argc, char **argv) {
 	int now_opt = 0;
 	std::string outp;
-	while((now_opt = getopt_long_only(argc, argv, "", long_opt_args, NULL)) != -1) {
+	int opt_index = 0;
+	while((now_opt = getopt_long_only(argc, argv, "", long_opt_args, &opt_index)) != -1) {
 		switch(now_opt) {
 		case 1001:
 			output_koopa = true;
@@ -42,9 +43,8 @@ int main(int argc, char **argv) {
 			outp = optarg;
 			break;
 		case '?':
-			std::cerr << "I can't understand, so...\n";
-			std::cerr << "world.execute(me);\n";
-			return 114514;
+			std::cerr << "Never gonna give you up\n" << argv[opt_index] << "\n";
+			throw 114514;
 		default:
 			assert(0);
 		}

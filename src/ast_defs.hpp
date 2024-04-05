@@ -2,6 +2,7 @@
 #include <cassert>
 #include <iostream>
 #include <list>
+#include <map>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -109,27 +110,30 @@ public:
 class ExpAST : public BaseAST {
 public:
 	std::unique_ptr<BinaryExpAST<BINARY_EXP_MAX_LEVEL>> binary_exp;
+	int calc();
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
 class UnaryExpAST : public BaseAST {
 public:
 	std::optional<std::unique_ptr<UnaryOpAST>> unary_op;
-	std::unique_ptr<BaseAST> unary_exp;
-	// UnartExpAST or PrimaryExpAST
+	std::variant<std::unique_ptr<UnaryExpAST>, std::unique_ptr<PrimaryExpAST>> unary_exp;
 	void output(Ost &outstr, std::string prefix) const override;
+	int calc();
 };
 
 class PrimaryExpAST : public BaseAST {
 public:
 	std::variant<std::unique_ptr<ExpAST>, std::unique_ptr<LValAST>, int> inside_exp;
 	void output(Ost &outstr, std::string prefix) const override;
+	int calc();
 };
 
 class UnaryOpAST : public OpAST {
 public:
 	using OpAST::OpAST;
 	void output(Ost &outstr, std::string prefix) const override;
+	int calc(int x);
 };
 
 class BinaryOpAST : public OpAST {
@@ -137,6 +141,7 @@ public:
 	using OpAST::OpAST;
 	bool is_logic_op();
 	void output(Ost &outstr, std::string prefix) const override;
+	int calc(int lhs, int rhs);
 };
 
 template<typename Now_Level_Type, typename Nxt_Level_Type>
@@ -146,6 +151,7 @@ public:
 	std::optional<std::unique_ptr<BinaryOpAST>> binary_op;
 	std::unique_ptr<Nxt_Level_Type> nxt_level;
 	void output(Ost &outstr, std::string prefix) const override;
+	int calc();
 };
 
 template<int level>
@@ -191,12 +197,15 @@ public:
 class ConstInitValAST : public BaseAST {
 public:
 	std::unique_ptr<ConstExpAST> exp;
+	std::optional<std::variant<int>> val;
+	void calc();
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
 class ConstExpAST : public BaseAST {
 public:
 	std::unique_ptr<ExpAST> exp;
+	int calc();
 	void output(Ost &outstr, std::string prefix) const override;
 };
 

@@ -5,15 +5,16 @@ namespace Ast_Base {
 int var_count = 0;
 
 class Koopa_val {
-private:
+public:
 	int val;
 	bool is_im;
 
-public:
+	Koopa_val() = default;
 	Koopa_val(bool typ, int x) {
 		is_im = typ;
 		val = x;
 	}
+	Koopa_val& operator=(Koopa_val const &) = default;
 	std::string get_str() {
 		if(is_im) {
 			return std::to_string(val);
@@ -33,6 +34,8 @@ public:
 };
 
 std::stack<Koopa_val> stmt_val;
+
+std::map<std::string, Koopa_val> symbol_table;
 
 namespace Ast_Defs {
 
@@ -57,9 +60,16 @@ void TypAST::output(Ost& outstr, std::string) const {
 
 void BlockAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix << "%entry:\n";
-	for(auto &i:items){
+	for(auto& i : items) {
 		i->output(outstr, prefix + INDENT);
 	}
+}
+
+void BlockItemAST::output(Ost& outstr, std::string prefix) const {
+	std::visit([&](auto& i) {
+		i->output(outstr, prefix);
+	},
+			   item);
 }
 
 void StmtAST::output(Ost& outstr, std::string prefix) const {
@@ -72,10 +82,14 @@ void ExpAST::output(Ost& outstr, std::string prefix) const {
 	binary_exp->output(outstr, prefix);
 }
 
+int ExpAST::calc() {
+	return binary_exp->calc();
+}
+
 void UnaryExpAST::output(Ost& outstr, std::string prefix) const {
 	if(unary_op.has_value()) {
 		// unary_exp
-		unary_exp->output(outstr, prefix);
+		std::get<0>(unary_exp)->output(outstr, prefix);
 		int now_var = var_count;
 		var_count++;
 		outstr << prefix << "%" << now_var << " = ";
@@ -85,7 +99,15 @@ void UnaryExpAST::output(Ost& outstr, std::string prefix) const {
 		stmt_val.push(Koopa_val(false, now_var));
 	} else {
 		// primary_exp
-		unary_exp->output(outstr, prefix);
+		std::get<1>(unary_exp)->output(outstr, prefix);
+	}
+}
+
+int UnaryExpAST::calc() {
+	if(unary_op.has_value()) {
+		return unary_op.value()->calc(std::get<0>(unary_exp)->calc());
+	} else {
+		return std::get<1>(unary_exp)->calc();
 	}
 }
 
@@ -104,6 +126,26 @@ void PrimaryExpAST::output(Ost& outstr, std::string prefix) const {
 	}
 }
 
+int PrimaryExpAST::calc() {
+	switch(inside_exp.index()) {
+	case 0:
+		return std::get<0>(inside_exp)->calc();
+		break;
+	case 1: {
+		std::string& ident = std::get<1>(inside_exp)->ident;
+		if(!symbol_table.contains(ident)) {
+			throw 114514;
+		}
+		return symbol_table[ident].val;
+		break;
+	}
+	case 2:
+		return std::get<2>(inside_exp);
+		break;
+	default: assert(0);
+	}
+}
+
 void UnaryOpAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix;
 	switch(op) {
@@ -119,6 +161,22 @@ void UnaryOpAST::output(Ost& outstr, std::string prefix) const {
 	default:
 		assert(0);
 		break;
+	}
+}
+
+int UnaryOpAST::calc(int x) {
+	switch(op) {
+	case OP_ADD:
+		return x;
+		break;
+	case OP_SUB:
+		return -x;
+		break;
+	case OP_LNOT:
+		return !x;
+		break;
+	default:
+		assert(0);
 	}
 }
 
@@ -172,6 +230,51 @@ void BinaryOpAST::output(Ost& outstr, std::string prefix) const {
 	}
 }
 
+int BinaryOpAST::calc(int lhs, int rhs) {
+	switch(op) {
+	case OP_ADD:
+		return lhs + rhs;
+		break;
+	case OP_SUB:
+		return lhs - rhs;
+		break;
+	case OP_MUL:
+		return lhs * rhs;
+		break;
+	case OP_DIV:
+		return lhs / rhs;
+		break;
+	case OP_MOD:
+		return lhs % rhs;
+		break;
+	case OP_GT:
+		return lhs > rhs;
+		break;
+	case OP_GE:
+		return lhs >= rhs;
+		break;
+	case OP_LT:
+		return lhs < rhs;
+		break;
+	case OP_LE:
+		return lhs <= rhs;
+		break;
+	case OP_EQ:
+		return lhs == rhs;
+		break;
+	case OP_NEQ:
+		return lhs != rhs;
+		break;
+	case OP_LAND:
+		return lhs && rhs;
+		break;
+	case OP_LOR:
+		return lhs || rhs;
+		break;
+	default: assert(0);
+	}
+}
+
 template<typename T, typename U>
 void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 	if(!binary_op.has_value()) {
@@ -199,6 +302,59 @@ void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 	binary_op.value()->output(outstr, "");
 	outstr << lhs << ", " << rhs << '\n';
 	stmt_val.push(Koopa_val(false, now_var));
+}
+
+template<typename T, typename U>
+int BinaryExpAST_Base<T, U>::calc() {
+	if(binary_op.has_value()) {
+		return binary_op.value()->calc(now_level.value()->calc(), nxt_level->calc());
+	} else {
+		return nxt_level->calc();
+	}
+}
+
+void DeclAST::output(Ost& outstr, std::string prefix) const {
+	const_decl_ast->output(outstr, prefix);
+}
+
+void ConstDeclAST::output(Ost& outstr, std::string prefix) const {
+	for(auto& i : defs) {
+		i->output(outstr, prefix);
+	}
+}
+
+void BTypeAST::output(Ost& outstr, std::string prefix) const {}
+
+void ConstDefAST::output(Ost& outstr, std::string prefix) const {
+	if(symbol_table.contains(ident)) {
+		std::cerr << "It's been a long day without you my friend\n"
+				  << "And I'll tell you all about it when I see you again\n"
+				  << ident << "\n";
+		throw 114514;
+	}
+	val->calc();
+	Koopa_val kval(true, std::get<int>(val->val.value()));
+	symbol_table[ident] = kval;
+}
+
+void ConstInitValAST::output(Ost& outstr, std::string prefix) const {}
+
+void ConstInitValAST::calc() {
+	val = exp->calc();
+}
+
+void LValAST::output(Ost& outstr, std::string prefix) const {
+	if(!symbol_table.contains(ident)) {
+		std::cerr << "What is " << ident << "???\n";
+		throw 114514;
+	}
+	stmt_val.push(symbol_table[ident]);
+}
+
+void ConstExpAST::output(Ost& outstr, std::string prefix) const {}
+
+int ConstExpAST::calc() {
+	return exp->calc();
 }
 
 }   // namespace Ast_Defs

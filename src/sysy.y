@@ -111,7 +111,11 @@ BlockItem:
 	};
 	
 Decl:
-	ConstDecl;
+	ConstDecl {
+		auto ast = new DeclAST();
+		ast->const_decl_ast = cast_ast<ConstDeclAST>($1);
+		$$ = ast;
+	};
 
 ConstDecl:
 	CONST BType ConstDefList ';' {
@@ -139,10 +143,18 @@ ConstDef:
 	};
 
 ConstInitVal:
-	ConstExp;
+	ConstExp {
+		auto ast = new ConstInitValAST();
+		ast->exp = cast_ast<ConstExpAST>($1);
+		$$ = ast;
+	};
 
 ConstExp:
-	Exp;
+	Exp {
+		auto ast = new ConstExpAST();
+		ast->exp = cast_ast<ExpAST>($1);
+		$$ = ast;
+	};
 
 BType:
 	INT {
@@ -193,7 +205,7 @@ PrimaryExp:
 UnaryExp:
 	PrimaryExp {
 		auto ast = new UnaryExpAST();
-		ast->unary_exp = cast_ast<UnaryExpAST>($1);
+		ast->unary_exp = cast_ast<PrimaryExpAST>($1);
 		$$ = ast;
 	}
 	| UnaryOp UnaryExp{
@@ -248,7 +260,11 @@ MulExp:
 	;
 
 AddExp:
-	MulExp
+	MulExp {
+		auto ast = new AddExpAST();
+		ast->nxt_level = cast_ast<MulExpAST>($1);
+		$$ = ast;
+	}
 	| AddExp Lv1Op MulExp {
 		auto ast = new AddExpAST();
 		ast->now_level = cast_ast<AddExpAST>($1);
@@ -259,7 +275,11 @@ AddExp:
 	;
 
 RelExp:
-	AddExp
+	AddExp {
+		auto ast = new RelExpAST();
+		ast->nxt_level = cast_ast<AddExpAST>($1);
+		$$ = ast;
+	}
 	| RelExp Lv2Op AddExp {
 		auto ast = new RelExpAST();
 		ast->now_level = cast_ast<RelExpAST>($1);
@@ -270,7 +290,11 @@ RelExp:
 	;
 
 EqExp:
-	RelExp
+	RelExp {
+		auto ast = new EqExpAST();
+		ast->nxt_level = cast_ast<RelExpAST>($1);
+		$$ = ast;
+	}
 	| EqExp Lv3Op RelExp {
 		auto ast = new EqExpAST();
 		ast->now_level = cast_ast<EqExpAST>($1);
@@ -280,7 +304,11 @@ EqExp:
 	};
 
 LAndExp:
-	EqExp
+	EqExp {
+		auto ast = new LAndExpAST();
+		ast->nxt_level = cast_ast<EqExpAST>($1);
+		$$ = ast;
+	}
 	| LAndExp Lv4Op EqExp {
 		auto ast = new LAndExpAST();
 		ast->now_level = cast_ast<LAndExpAST>($1);
@@ -290,7 +318,11 @@ LAndExp:
 	};
 
 LOrExp:
-	LAndExp
+	LAndExp {
+		auto ast = new LOrExpAST();
+		ast->nxt_level = cast_ast<LAndExpAST>($1);
+		$$ = ast;
+	}
 	| LOrExp Lv5Op LAndExp {
 		auto ast = new LOrExpAST();
 		ast->now_level = cast_ast<LOrExpAST>($1);
