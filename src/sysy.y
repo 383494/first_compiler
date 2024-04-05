@@ -124,9 +124,9 @@ ConstDecl:
 	};
 
 ConstDefList:
-	ConstDefList ConstDef {
+	ConstDefList ',' ConstDef {
 		auto ast = (ConstDeclAST*)$1;
-		ast->defs.push_back(cast_ast<ConstDefAST>($2));
+		ast->defs.push_back(cast_ast<ConstDefAST>($3));
 		$$ = ast;
 	} | ConstDef {
 		auto ast = new ConstDeclAST();
