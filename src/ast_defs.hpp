@@ -1,5 +1,4 @@
 #pragma once
-#include <cassert>
 #include <iostream>
 #include <list>
 #include <map>
@@ -8,6 +7,7 @@
 #include <sstream>
 #include <stack>
 #include <string>
+#include <unordered_set>
 #include <variant>
 
 namespace Ast_Base {
@@ -15,6 +15,9 @@ namespace Ast_Base {
 constexpr const char *INDENT = "  ";
 using Ost = std::ostringstream;
 constexpr int BINARY_EXP_MAX_LEVEL = 5;
+
+template<typename... Types>
+using VariantAstPtr = std::variant<std::unique_ptr<Types>...>;
 
 namespace Ast_Defs {
 
@@ -59,12 +62,17 @@ class ConstInitValAST;
 class DeclAST;
 class ExpAST;
 class FuncDefAST;
+class InitValAST;
 class LValAST;
+class LValAssignAST;
 class PrimaryExpAST;
+class ReturnAST;
 class StmtAST;
 class TypAST;
 class UnaryExpAST;
 class UnaryOpAST;
+class VarDeclAST;
+class VarDefAST;
 
 template<int>
 class BinaryExpAST;
@@ -83,6 +91,7 @@ public:
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
+// Type of function.
 class TypAST : public BaseAST {
 public:
 	std::string typ;
@@ -97,13 +106,13 @@ public:
 
 class BlockItemAST : public BaseAST {
 public:
-	std::variant<std::unique_ptr<DeclAST>, std::unique_ptr<StmtAST>> item;
+	VariantAstPtr<DeclAST, StmtAST> item;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
 class StmtAST : public BaseAST {
 public:
-	std::unique_ptr<ExpAST> ret_val;
+	VariantAstPtr<ReturnAST, LValAssignAST> val;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -117,7 +126,7 @@ public:
 class UnaryExpAST : public BaseAST {
 public:
 	std::optional<std::unique_ptr<UnaryOpAST>> unary_op;
-	std::variant<std::unique_ptr<UnaryExpAST>, std::unique_ptr<PrimaryExpAST>> unary_exp;
+	VariantAstPtr<UnaryExpAST, PrimaryExpAST> unary_exp;
 	void output(Ost &outstr, std::string prefix) const override;
 	int calc();
 };
@@ -171,7 +180,7 @@ using LOrExpAST = BinaryExpAST<5>; template class BinaryExpAST<5>;
 
 class DeclAST : public BaseAST {
 public:
-	std::unique_ptr<ConstDeclAST> const_decl_ast;
+	VariantAstPtr<ConstDeclAST, VarDeclAST> decl;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -184,6 +193,8 @@ public:
 
 class BTypeAST : public BaseAST {
 public:
+	BTypeAST() = default;
+	BTypeAST(BTypeAST const &) = default;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -197,7 +208,7 @@ public:
 class ConstInitValAST : public BaseAST {
 public:
 	std::unique_ptr<ConstExpAST> exp;
-	std::optional<std::variant<int>> val;
+	std::optional<std::variant<int>> val;   // cached
 	void calc();
 	void output(Ost &outstr, std::string prefix) const override;
 };
@@ -212,6 +223,40 @@ public:
 class LValAST : public BaseAST {
 public:
 	std::string ident;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class VarDeclAST : public BaseAST {
+public:
+	std::unique_ptr<BTypeAST> typ;
+	std::list<std::unique_ptr<VarDefAST>> defs;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class VarDefAST : public BaseAST {
+public:
+	std::unique_ptr<BTypeAST> typ;
+	std::string ident;
+	std::optional<std::unique_ptr<InitValAST>> val;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class InitValAST : public BaseAST {
+public:
+	std::unique_ptr<ExpAST> exp;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class LValAssignAST : public BaseAST {
+public:
+	std::unique_ptr<LValAST> lval;
+	std::unique_ptr<ExpAST> exp;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class ReturnAST : public BaseAST {
+public:
+	std::unique_ptr<ExpAST> exp;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 

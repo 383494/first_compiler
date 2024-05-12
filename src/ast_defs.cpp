@@ -1,41 +1,120 @@
 #include "ast_defs.hpp"
+#include <cassert>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace Ast_Base {
 
 int var_count = 0;
 
-class Koopa_val {
-public:
-	int val;
-	bool is_im;
+namespace Koopa_Val_Def {
 
-	Koopa_val() = default;
-	Koopa_val(bool typ, int x) {
-		is_im = typ;
-		val = x;
+enum Koopa_value_type {
+	KOOPA_VALUE_TYPE_IMMEDIATE,
+	KOOPA_VALUE_TYPE_TEMP,
+	KOOPA_VALUE_TYPE_NAMED
+};
+
+class Koopa_val_base {
+public:
+	virtual std::string get_str() const = 0;
+	virtual void prepare(Ost& outstr, std::string prefix) { return; }
+	virtual Koopa_value_type val_type() const = 0;
+	virtual ~Koopa_val_base() { return; }
+};
+
+class Koopa_val_im : public Koopa_val_base {
+private:
+	int val;
+
+public:
+	Koopa_val_im(int x) { val = x; }
+	int get_im_val() const { return val; }
+	std::string get_str() const override {
+		return std::to_string(val);
 	}
-	Koopa_val& operator=(Koopa_val const &) = default;
-	std::string get_str() {
-		if(is_im) {
-			return std::to_string(val);
+	Koopa_value_type val_type() const override { return KOOPA_VALUE_TYPE_IMMEDIATE; }
+};
+
+class Koopa_val_temp_symbol : public Koopa_val_base {
+private:
+	int id;
+
+public:
+	Koopa_val_temp_symbol(int x) { id = x; }
+	std::string get_str() const override {
+		return std::string("%") + std::to_string(id);
+	}
+	Koopa_value_type val_type() const override { return KOOPA_VALUE_TYPE_TEMP; }
+};
+
+class Koopa_val_named_symbol : public Koopa_val_base {
+private:
+	std::string id;
+	int cache_id;
+
+public:
+	void set_id(std::string str) { id = str; }
+	std::string get_id() const { return id; }
+	std::string get_str() const override {
+		return std::string("%") + std::to_string(cache_id);
+	}
+	void prepare(Ost& outstr, std::string prefix) override {
+		outstr << prefix << "%" << var_count << " = load @" << id << '\n';
+		cache_id = var_count;
+		var_count++;
+	}
+	Koopa_value_type val_type() const override { return KOOPA_VALUE_TYPE_NAMED; }
+};
+
+class Koopa_val {
+private:
+	std::shared_ptr<Koopa_val_base> val;
+
+public:
+	Koopa_val() {}
+	Koopa_val(Koopa_val const &) = default;
+	Koopa_val(Koopa_val_base* obj) {
+		val = std::shared_ptr<Koopa_val_base>(obj);
+	}
+	int get_im_val() const {
+		if(val_type() == KOOPA_VALUE_TYPE_IMMEDIATE) {
+			return std::static_pointer_cast<Koopa_val_im>(val)->get_im_val();
 		} else {
-			return std::string("%") + std::to_string(val);
+			assert(0);
 		}
+	}
+	std::string get_named_name() const {
+		if(val_type() == KOOPA_VALUE_TYPE_NAMED) {
+			return std::static_pointer_cast<Koopa_val_named_symbol>(val)->get_id();
+		} else {
+			assert(0);
+		}
+	}
+	Koopa_value_type val_type() const { return val->val_type(); }
+	std::string get_str() const {
+		return val->get_str();
+	}
+	void prepare(Ost& outstr, std::string prefix) {
+		return val->prepare(outstr, prefix);
 	}
 	template<typename T>
-	friend T& operator<<(T& outstr, const Koopa_val& me) {
-		if(me.is_im) {
-			outstr << me.val;
-		} else {
-			outstr << "%" << me.val;
-		}
+	friend T& operator<<(T& outstr, Koopa_val const & me) {
+		outstr << me.get_str();
 		return outstr;
 	}
 };
 
+}   // namespace Koopa_Val_Def
+
+using namespace Koopa_Val_Def;
+
 std::stack<Koopa_val> stmt_val;
 
-std::map<std::string, Koopa_val> symbol_table;
+std::unordered_map<std::string, Koopa_val> symbol_table;
+
+// name -> value
+std::unordered_map<std::string, int> symbol_const;
 
 namespace Ast_Defs {
 
@@ -50,12 +129,11 @@ void FuncDefAST::output(Ost& outstr, std::string prefix) const {
 	func_typ->output(outstr, "");
 	outstr << "{\n";
 	block->output(outstr, prefix);
-	outstr << "\n"
-		   << prefix << "}\n";
+	outstr << prefix << "}\n";
 }
 
-void TypAST::output(Ost& outstr, std::string) const {
-	outstr << typ;
+void TypAST::output(Ost& outstr, std::string prefix) const {
+	outstr << prefix << typ;
 }
 
 void BlockAST::output(Ost& outstr, std::string prefix) const {
@@ -73,9 +151,10 @@ void BlockItemAST::output(Ost& outstr, std::string prefix) const {
 }
 
 void StmtAST::output(Ost& outstr, std::string prefix) const {
-	ret_val->output(outstr, prefix);
-	outstr << prefix << "ret " << stmt_val.top();
-	stmt_val.pop();
+	std::visit([&](auto& i) {
+		i->output(outstr, prefix);
+	},
+			   val);
 }
 
 void ExpAST::output(Ost& outstr, std::string prefix) const {
@@ -96,7 +175,7 @@ void UnaryExpAST::output(Ost& outstr, std::string prefix) const {
 		(*unary_op)->output(outstr, "");
 		outstr << stmt_val.top() << "\n";
 		stmt_val.pop();
-		stmt_val.push(Koopa_val(false, now_var));
+		stmt_val.push(new Koopa_val_temp_symbol(now_var));
 	} else {
 		// primary_exp
 		std::get<1>(unary_exp)->output(outstr, prefix);
@@ -120,7 +199,7 @@ void PrimaryExpAST::output(Ost& outstr, std::string prefix) const {
 		std::get<1>(inside_exp)->output(outstr, prefix);
 		break;
 	case 2:
-		stmt_val.push(Koopa_val(true, std::get<2>(inside_exp)));
+		stmt_val.push(new Koopa_val_im(std::get<2>(inside_exp)));
 		break;
 	default:;
 	}
@@ -136,7 +215,7 @@ int PrimaryExpAST::calc() {
 		if(!symbol_table.contains(ident)) {
 			throw 114514;
 		}
-		return symbol_table[ident].val;
+		return symbol_table[ident].get_im_val();
 		break;
 	}
 	case 2:
@@ -286,22 +365,24 @@ void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 	nxt_level->output(outstr, prefix);
 	Koopa_val rhs = stmt_val.top();
 	stmt_val.pop();
+	lhs.prepare(outstr, prefix);
+	rhs.prepare(outstr, prefix);
 	if(binary_op.value()->is_logic_op()) {
 		int now_var = var_count;
 		var_count++;
 		outstr << prefix << "%" << now_var << " = ne 0, " << lhs;
-		lhs = Koopa_val(false, now_var);
+		lhs = new Koopa_val_temp_symbol(now_var);
 		now_var = var_count;
 		var_count++;
 		outstr << prefix << "%" << now_var << " = ne 0, " << rhs;
-		rhs = Koopa_val(false, now_var);
+		rhs = new Koopa_val_temp_symbol(now_var);
 	}
 	int now_var = var_count;
 	var_count++;
 	outstr << prefix << "%" << now_var << " = ";
 	binary_op.value()->output(outstr, "");
 	outstr << lhs << ", " << rhs << '\n';
-	stmt_val.push(Koopa_val(false, now_var));
+	stmt_val.push(new Koopa_val_temp_symbol(now_var));
 }
 
 template<typename T, typename U>
@@ -314,7 +395,10 @@ int BinaryExpAST_Base<T, U>::calc() {
 }
 
 void DeclAST::output(Ost& outstr, std::string prefix) const {
-	const_decl_ast->output(outstr, prefix);
+	std::visit([&](auto&& x) {
+		x->output(outstr, prefix);
+	},
+			   decl);
 }
 
 void ConstDeclAST::output(Ost& outstr, std::string prefix) const {
@@ -323,7 +407,9 @@ void ConstDeclAST::output(Ost& outstr, std::string prefix) const {
 	}
 }
 
-void BTypeAST::output(Ost& outstr, std::string prefix) const {}
+void BTypeAST::output(Ost& outstr, std::string prefix) const {
+	outstr << prefix << "i32";
+}
 
 void ConstDefAST::output(Ost& outstr, std::string prefix) const {
 	if(symbol_table.contains(ident)) {
@@ -333,14 +419,20 @@ void ConstDefAST::output(Ost& outstr, std::string prefix) const {
 		throw 114514;
 	}
 	val->calc();
-	Koopa_val kval(true, std::get<int>(val->val.value()));
-	symbol_table[ident] = kval;
+	symbol_table[ident] = new Koopa_val_im(std::get<int>(val->val.value()));
+	symbol_const[ident] = std::get<int>(val->val.value());
 }
 
-void ConstInitValAST::output(Ost& outstr, std::string prefix) const {}
+void ConstInitValAST::output(Ost& outstr, std::string prefix) const {
+	return;
+}
 
 void ConstInitValAST::calc() {
 	val = exp->calc();
+}
+
+void InitValAST::output(Ost& outstr, std::string prefix) const {
+	exp->output(outstr, prefix);
 }
 
 void LValAST::output(Ost& outstr, std::string prefix) const {
@@ -351,10 +443,55 @@ void LValAST::output(Ost& outstr, std::string prefix) const {
 	stmt_val.push(symbol_table[ident]);
 }
 
-void ConstExpAST::output(Ost& outstr, std::string prefix) const {}
+void ConstExpAST::output(Ost& outstr, std::string prefix) const {
+	return;
+}
 
 int ConstExpAST::calc() {
 	return exp->calc();
+}
+
+void VarDeclAST::output(Ost& outstr, std::string prefix) const {
+	for(auto& i : defs) {
+		i->typ = std::make_unique<BTypeAST>(*typ);
+		i->output(outstr, prefix);
+	}
+}
+
+void VarDefAST::output(Ost& outstr, std::string prefix) const {
+	outstr << prefix << "@" << ident << " = alloc ";
+	typ->output(outstr, "");
+	outstr << "\n";
+	auto reg_var = new Koopa_val_named_symbol;
+	reg_var->set_id(ident);
+	symbol_table[ident] = Koopa_val(reg_var);
+	if(val.has_value()) {
+		val.value()->output(outstr, prefix);
+		Koopa_val last_val = stmt_val.top();
+		stmt_val.pop();
+		last_val.prepare(outstr, prefix);
+		outstr << prefix << "store " << last_val << ", @" << ident << "\n";
+	}
+}
+
+void LValAssignAST::output(Ost& outstr, std::string prefix) const {
+	Koopa_val lhs, rhs;
+	lval->output(outstr, prefix);
+	lhs = stmt_val.top();
+	stmt_val.pop();
+	exp->output(outstr, prefix);
+	rhs = stmt_val.top();
+	stmt_val.pop();
+	rhs.prepare(outstr, prefix);
+	outstr << prefix << "store " << rhs << ", @" << lhs.get_named_name() << '\n';
+}
+
+void ReturnAST::output(Ost& outstr, std::string prefix) const {
+	exp->output(outstr, prefix);
+	Koopa_val val = stmt_val.top();
+	stmt_val.pop();
+	val.prepare(outstr, prefix);
+	outstr << prefix << "ret " << val << '\n';
 }
 
 }   // namespace Ast_Defs

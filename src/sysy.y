@@ -11,7 +11,6 @@
 #include <string>
 #include "ast_defs.hpp"
 
-// 声明 lexer 函数和错误处理函数
 int yylex();
 void yyerror(std::unique_ptr<BaseAST> &ast, const char *s);
 
@@ -23,9 +22,6 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 
 %}
 
-// 定义 parser 函数和错误处理函数的附加参数
-// 我们需要返回一个字符串作为 AST, 所以我们把附加参数定义成字符串的智能指针
-// 解析完成后, 我们要手动修改这个参数, 把它设置成解析得到的字符串
 %parse-param { std::unique_ptr<BaseAST> &ast }
 
 %union {
@@ -43,7 +39,7 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 %token <int_val> INT_CONST
 
 %type <ast_val> FuncDef FuncType Block BlockItemList BlockItem Stmt 
-%type <ast_val> Decl ConstDecl BType ConstDef ConstDefList ConstInitVal LVal
+%type <ast_val> Decl ConstDecl VarDecl BType ConstDef ConstDefList ConstInitVal VarDef VarDefList InitVal LVal
 %type <ast_val> PrimaryExp ConstExp Exp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
 
 // All below are BINARY operators.
@@ -113,7 +109,11 @@ BlockItem:
 Decl:
 	ConstDecl {
 		auto ast = new DeclAST();
-		ast->const_decl_ast = cast_ast<ConstDeclAST>($1);
+		ast->decl = cast_ast<ConstDeclAST>($1);
+		$$ = ast;
+	} | VarDecl {
+		auto ast = new DeclAST();
+		ast->decl = cast_ast<VarDeclAST>($1);
 		$$ = ast;
 	};
 
@@ -156,6 +156,44 @@ ConstExp:
 		$$ = ast;
 	};
 
+VarDecl:
+	BType VarDefList ';' {
+		auto ast = (VarDeclAST*)$2;
+		ast->typ = cast_ast<BTypeAST>($1);
+		$$ = ast;
+	};
+
+VarDefList:
+	VarDefList ',' VarDef {
+		auto ast = (VarDeclAST*)$1;
+		ast->defs.push_back(cast_ast<VarDefAST>($3));
+		$$ = ast;
+	} | VarDef {
+		auto ast = new VarDeclAST();
+		ast->defs.push_back(cast_ast<VarDefAST>($1));
+		$$ = ast;
+	};
+
+VarDef:
+	IDENT {
+		auto ast = new VarDefAST();
+		ast->ident = *$1;
+		$$ = ast;
+	} | IDENT '=' InitVal {
+		auto ast = new VarDefAST();
+		ast->ident = *$1;
+		ast->val = cast_ast<InitValAST>($3);
+		$$ = ast;
+	};
+
+InitVal: 
+	Exp {
+		auto ast = new InitValAST();
+		ast->exp = cast_ast<ExpAST>($1);
+		$$ = $1;
+	};
+
+
 BType:
 	INT {
 		auto ast = new BTypeAST();
@@ -165,7 +203,14 @@ BType:
 Stmt
 	: RETURN Exp ';' {
 		auto ast = new StmtAST();
-		ast->ret_val = cast_ast<ExpAST>($2);
+		auto ret_ast = std::make_unique<ReturnAST>();
+		ret_ast->exp = cast_ast<ExpAST>($2);
+		ast->val = std::move(ret_ast);
+		$$ = ast;
+	} | LVal '=' Exp ';' {
+		auto ast = new LValAssignAST();
+		ast->lval = cast_ast<LValAST>($1);
+		ast->exp = cast_ast<ExpAST>($3);
 		$$ = ast;
 	}
 	;
