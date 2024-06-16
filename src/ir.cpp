@@ -42,7 +42,6 @@ std::stack<int> function_stack_mem;
 
 }   // namespace Global_State
 
-// koopa_raw_
 std::unordered_map<void *, std::shared_ptr<Asm_val>> valmp;
 
 // return mem(byte).
@@ -54,14 +53,6 @@ int get_function_stack_mem(const koopa_raw_value_t &val) {
 	valmp[(void *)val] = std::make_shared<Asm_val>(Global_State::offset_cnt, false);
 	Global_State::offset_cnt += 4;
 	return 4;
-	// const auto &kind = val->kind;
-	// switch(kind.tag) {
-	// case KOOPA_RVT_BINARY:
-	// case KOOPA_RVT_INTEGER:
-	//	// ...
-	// default:
-	//	return 0;
-	// }
 }
 
 int get_function_stack_mem(const koopa_raw_basic_block_t &blk) {
@@ -99,7 +90,9 @@ void dfs_ir(const koopa_raw_function_t &func, Outp &outstr) {
 	outstr << (func->name + 1) << ":\n";
 	int mem = get_function_stack_mem(func);
 	Global_State::function_stack_mem.push(mem);
-	outstr << "li t0, " << -mem << "\nadd sp, sp, t0\n";
+	if(mem > 0) {
+		outstr << "li t0, " << -mem << "\nadd sp, sp, t0\n";
+	}
 	for(size_t i = 0; i < func->bbs.len; i++) {
 		assert(func->bbs.kind == KOOPA_RSIK_BASIC_BLOCK);
 		koopa_raw_basic_block_t blk = (koopa_raw_basic_block_t)func->bbs.buffer[i];
@@ -108,6 +101,7 @@ void dfs_ir(const koopa_raw_function_t &func, Outp &outstr) {
 	Global_State::function_stack_mem.pop();
 	// ret: sp -= mem;
 }
+
 void dfs_ir(const koopa_raw_basic_block_t &blk, Outp &outstr) {
 	for(size_t i = 0; i < blk->insts.len; i++) {
 		assert(blk->insts.kind == KOOPA_RSIK_VALUE);
@@ -130,7 +124,6 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 		dfs_ir(kind.data.binary, outstr);
 		break;
 	case KOOPA_RVT_RETURN:
-		valmp[(void *)&kind.data.ret] = valmp[(void *)val];
 		dfs_ir(kind.data.ret, outstr);
 		break;
 	case KOOPA_RVT_INTEGER:
@@ -154,14 +147,13 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 }
 
 void dfs_ir(const koopa_raw_return_t &ret, Outp &outstr) {
-	if(!valmp.contains((void *)ret.value)) {
-		valmp[(void *)ret.value] = valmp[(void *)&ret];
-		dfs_ir(ret.value, outstr);
-	}
+	dfs_ir(ret.value, outstr);
 	valmp[(void *)ret.value]->load(outstr, "a0");
-	outstr << "li t0, " << Global_State::function_stack_mem.top() << "\n"
-		   << "add sp, sp, t0\n"
-		   << "ret\n";
+	int mem = Global_State::function_stack_mem.top();
+	if(mem > 0) {
+		outstr << "li t0, " << mem << "\n";
+	}
+	outstr << "add sp, sp, t0\nret\n";
 	return;
 }
 
