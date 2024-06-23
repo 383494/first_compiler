@@ -65,6 +65,7 @@ class FuncDefAST;
 class InitValAST;
 class LValAST;
 class LValAssignAST;
+class OptionalExpAST;
 class PrimaryExpAST;
 class ReturnAST;
 class StmtAST;
@@ -112,7 +113,14 @@ public:
 
 class StmtAST : public BaseAST {
 public:
-	VariantAstPtr<ReturnAST, LValAssignAST> val;
+	VariantAstPtr<ReturnAST, LValAssignAST, OptionalExpAST, BlockAST> val;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class OptionalExpAST : public BaseAST {
+public:
+	std::optional<std::unique_ptr<ExpAST>> exp;
+	bool has_value() const;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -256,7 +264,7 @@ public:
 
 class ReturnAST : public BaseAST {
 public:
-	std::unique_ptr<ExpAST> exp;
+	std::unique_ptr<OptionalExpAST> exp;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 

@@ -81,6 +81,8 @@ FuncType
 Block
 	: '{' BlockItemList '}' {
 		$$ = $2;
+	} | '{' '}' {
+		$$ = new BlockAST();
 	}
 	;
 
@@ -200,17 +202,38 @@ BType:
 		$$ = ast;
 	};
 
-Stmt
-	: RETURN Exp ';' {
+Stmt:
+	RETURN ';' {
 		auto ast = new StmtAST();
 		auto ret_ast = std::make_unique<ReturnAST>();
-		ret_ast->exp = cast_ast<ExpAST>($2);
+		ret_ast->exp = std::make_unique<OptionalExpAST>();
+		ast->val = std::move(ret_ast);
+		$$ = ast;
+	} | RETURN Exp ';' {
+		auto ast = new StmtAST();
+		auto ret_ast = std::make_unique<ReturnAST>();
+		ret_ast->exp = std::make_unique<OptionalExpAST>();
+		ret_ast->exp->exp = cast_ast<ExpAST>($2);
 		ast->val = std::move(ret_ast);
 		$$ = ast;
 	} | LVal '=' Exp ';' {
-		auto ast = new LValAssignAST();
-		ast->lval = cast_ast<LValAST>($1);
-		ast->exp = cast_ast<ExpAST>($3);
+		auto ast = new StmtAST();
+		auto assign_ast = std::make_unique<LValAssignAST>();
+		assign_ast->lval = cast_ast<LValAST>($1);
+		assign_ast->exp = cast_ast<ExpAST>($3);
+		ast->val = std::move(assign_ast);
+		$$ = ast;
+	} | ';' {
+		auto ast = new StmtAST();
+		ast->val = std::make_unique<OptionalExpAST>();
+		$$ = ast;
+	} | Exp ';' {
+		auto ast = new StmtAST();
+		ast->val = cast_ast<OptionalExpAST>($1);
+		$$ = ast;
+	} | Block {
+		auto ast = new StmtAST();
+		ast->val = cast_ast<BlockAST>($1);
 		$$ = ast;
 	}
 	;
