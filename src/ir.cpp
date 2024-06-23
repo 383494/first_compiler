@@ -38,11 +38,13 @@ public:
 namespace Global_State {
 
 int offset_cnt;
+int basic_blk_cnt;
 std::stack<int> function_stack_mem;
 
 }   // namespace Global_State
 
 std::unordered_map<void *, std::shared_ptr<Asm_val>> valmp;
+std::unordered_map<koopa_raw_basic_block_t, std::string> blk_id_mp;
 
 // return mem(byte).
 
@@ -96,6 +98,12 @@ void dfs_ir(const koopa_raw_function_t &func, Outp &outstr) {
 	for(size_t i = 0; i < func->bbs.len; i++) {
 		assert(func->bbs.kind == KOOPA_RSIK_BASIC_BLOCK);
 		koopa_raw_basic_block_t blk = (koopa_raw_basic_block_t)func->bbs.buffer[i];
+		blk_id_mp[blk] = "block_" + std::to_string(Global_State::basic_blk_cnt);
+		Global_State::basic_blk_cnt++;
+	}
+	for(size_t i = 0; i < func->bbs.len; i++) {
+		assert(func->bbs.kind == KOOPA_RSIK_BASIC_BLOCK);
+		koopa_raw_basic_block_t blk = (koopa_raw_basic_block_t)func->bbs.buffer[i];
 		dfs_ir(blk, outstr);
 	}
 	Global_State::function_stack_mem.pop();
@@ -103,6 +111,7 @@ void dfs_ir(const koopa_raw_function_t &func, Outp &outstr) {
 }
 
 void dfs_ir(const koopa_raw_basic_block_t &blk, Outp &outstr) {
+	outstr << blk_id_mp[blk] << ":\n";
 	for(size_t i = 0; i < blk->insts.len; i++) {
 		assert(blk->insts.kind == KOOPA_RSIK_VALUE);
 		koopa_raw_value_t val = (koopa_raw_value_t)blk->insts.buffer[i];
@@ -142,9 +151,19 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 		valmp[(void *)val]->assign_from_t0(outstr);
 		break;
 	case KOOPA_RVT_BRANCH:
-
+		dfs_ir(kind.data.branch.cond, outstr);
+		valmp[(void *)kind.data.branch.cond]->load(outstr, "t0");
+		assert(blk_id_mp.contains(kind.data.branch.true_bb));
+		assert(blk_id_mp.contains(kind.data.branch.false_bb));
+		outstr << "bnez t0, " << blk_id_mp[kind.data.branch.true_bb] << "\n";
+		outstr << "j " << blk_id_mp[kind.data.branch.false_bb] << "\n";
+		break;
+	case KOOPA_RVT_JUMP:
+		assert(blk_id_mp.contains(kind.data.jump.target));
+		outstr << "j " << blk_id_mp[kind.data.jump.target] << "\n";
 		break;
 	default:
+		std::cerr << "koopa_raw_value_t not handled: " << kind.tag << '\n';
 		assert(0);
 	}
 }
