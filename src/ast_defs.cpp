@@ -7,6 +7,8 @@ namespace Ast_Base {
 
 int unnamed_var_cnt = 0;
 int named_var_cnt = 0;
+int if_cnt = 0;
+
 
 namespace Koopa_Val_Def {
 
@@ -102,12 +104,12 @@ public:
 	void prepare(Ost& outstr, std::string prefix) {
 		return val->prepare(outstr, prefix);
 	}
-	template<typename T>
-	friend T& operator<<(T& outstr, Koopa_val const & me) {
-		outstr << me.get_str();
-		return outstr;
-	}
 };
+
+Ost& operator<<(Ost& outstr, Koopa_val const & me) {
+	outstr << me.get_str();
+	return outstr;
+}
 
 }   // namespace Koopa_Val_Def
 
@@ -151,6 +153,17 @@ public:
 
 Symbol_table_stack<Koopa_val> symbol_table;
 
+/*
+namespace Exceptions {
+
+class End_of_block : public std::exception {
+	const char* what() const throw() {
+		return "Basic block ends. But why I was not catched???\n";
+	}
+};
+
+}   // namespace Exceptions
+*/
 
 // name -> value
 // Symbol_table_stack<int> symbol_const;
@@ -168,6 +181,8 @@ void FuncDefAST::output(Ost& outstr, std::string prefix) const {
 	func_typ->output(outstr, "");
 	outstr << "{\n%entry:\n";
 	block->output(outstr, prefix);
+	assert(outstr.muted);
+	outstr.unmute();
 	outstr << prefix << "}\n";
 }
 
@@ -542,6 +557,59 @@ void ReturnAST::output(Ost& outstr, std::string prefix) const {
 	} else {
 		outstr << prefix << "ret\n";
 	}
+	// throw Exceptions::End_of_block();
+	outstr.mute();
+}
+
+void IfAST::set_if_cnt() {
+	if_id = if_cnt;
+	if_cnt++;
+}
+
+std::string IfAST::get_then_str() const {
+	return "%then" + std::to_string(if_id);
+}
+
+std::string IfAST::get_else_str() const {
+	if(else_stmt.has_value()) {
+		return "%else" + std::to_string(if_id);
+	} else {
+		return "%end" + std::to_string(if_id);
+	}
+}
+std::string IfAST::get_end_str() const {
+	return "%end" + std::to_string(if_id);
+}
+
+void IfAST::output(Ost& outstr, std::string prefix) const {
+	cond->output(outstr, prefix);
+	auto cond_val = stmt_val.top();
+	stmt_val.pop();
+	cond_val.prepare(outstr, prefix);
+	outstr << prefix << "br " << cond_val << ", " << get_then_str() << ", " << get_else_str() << "\n";
+	outstr << get_then_str() << ":\n";
+	bool need_jump = true;
+	if_stmt->output(outstr, prefix);
+	if(outstr.muted) {
+		need_jump = false;
+		outstr.unmute();
+	}
+	if(need_jump) {
+		outstr << prefix << "jump " << get_end_str() << "\n";
+	}
+	if(else_stmt.has_value()) {
+		outstr << get_else_str() << ":\n";
+		need_jump = true;
+		else_stmt.value()->output(outstr, prefix);
+		if(outstr.muted) {
+			need_jump = false;
+			outstr.unmute();
+		}
+		if(need_jump) {
+			outstr << prefix << "jump " << get_end_str() << "\n";
+		}
+	}
+	outstr << get_end_str() << ":\n";
 }
 
 }   // namespace Ast_Defs

@@ -141,6 +141,9 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 		valmp[(void *)kind.data.load.src]->load(outstr, "t0");
 		valmp[(void *)val]->assign_from_t0(outstr);
 		break;
+	case KOOPA_RVT_BRANCH:
+
+		break;
 	default:
 		assert(0);
 	}

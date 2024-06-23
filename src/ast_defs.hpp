@@ -13,7 +13,24 @@
 namespace Ast_Base {
 
 constexpr const char *INDENT = "  ";
-using Ost = std::ostringstream;
+// using Ost = std::ostringstream;
+class Ost {
+public:
+	std::ostringstream *stream;
+	bool muted;
+	Ost(std::ostringstream &s) {
+		stream = &s;
+		muted = false;
+	}
+	Ost &operator<<(auto x) {
+		if(!muted) {
+			(*stream) << x;
+		}
+		return *this;
+	}
+	void mute() { muted = true; }
+	void unmute() { muted = false; }
+};
 constexpr int BINARY_EXP_MAX_LEVEL = 5;
 
 template<typename... Types>
@@ -62,6 +79,7 @@ class ConstInitValAST;
 class DeclAST;
 class ExpAST;
 class FuncDefAST;
+class IfAST;
 class InitValAST;
 class LValAST;
 class LValAssignAST;
@@ -113,7 +131,7 @@ public:
 
 class StmtAST : public BaseAST {
 public:
-	VariantAstPtr<ReturnAST, LValAssignAST, OptionalExpAST, BlockAST> val;
+	VariantAstPtr<ReturnAST, LValAssignAST, OptionalExpAST, BlockAST, IfAST> val;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -265,6 +283,20 @@ public:
 class ReturnAST : public BaseAST {
 public:
 	std::unique_ptr<OptionalExpAST> exp;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+// else is optional
+class IfAST : public BaseAST {
+public:
+	std::unique_ptr<ExpAST> cond;
+	std::unique_ptr<StmtAST> if_stmt;
+	std::optional<std::unique_ptr<StmtAST>> else_stmt;
+	int if_id;
+	void set_if_cnt();
+	std::string get_then_str() const;
+	std::string get_else_str() const;
+	std::string get_end_str() const;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 

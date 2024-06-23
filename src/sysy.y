@@ -30,6 +30,10 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 	BaseAST* ast_val;
 }
 
+%token IF ELSE
+%nonassoc LOWER_THAN_ELSE
+%nonassoc ELSE
+
 %token INT RETURN CONST
 %token ADD SUB MUL DIV MOD
 %token LE LT GE GT EQ NEQ
@@ -39,6 +43,7 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 %token <int_val> INT_CONST
 
 %type <ast_val> FuncDef FuncType Block BlockItemList BlockItem Stmt 
+%type <ast_val> If
 %type <ast_val> Decl ConstDecl VarDecl BType ConstDef ConstDefList ConstInitVal VarDef VarDefList InitVal LVal
 %type <ast_val> PrimaryExp ConstExp Exp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
 
@@ -235,8 +240,29 @@ Stmt:
 		auto ast = new StmtAST();
 		ast->val = cast_ast<BlockAST>($1);
 		$$ = ast;
-	}
-	;
+	} | If {
+		auto ast = new StmtAST();
+		ast->val = cast_ast<IfAST>($1);
+		$$ = ast;
+	};
+
+If:
+	IF '(' Exp ')' Stmt %prec LOWER_THAN_ELSE{
+		auto ast = new IfAST();
+		ast->cond = cast_ast<ExpAST>($3);
+		ast->if_stmt = cast_ast<StmtAST>($5);
+		ast->set_if_cnt();
+		$$ = ast;
+	} | IF '(' Exp ')' Stmt ELSE Stmt {
+		auto ast = new IfAST();
+		ast->cond = cast_ast<ExpAST>($3);
+		ast->if_stmt = cast_ast<StmtAST>($5);
+		ast->else_stmt = cast_ast<StmtAST>($7);
+		ast->set_if_cnt();
+		$$ = ast;
+	};
+
+
 
 LVal:
 	IDENT {

@@ -12,7 +12,7 @@ extern FILE *yyin;
 
 #include "ast_defs.hpp"
 #include "ir.hpp"
-extern int yyparse(std::unique_ptr<BaseAST>&);
+extern int yyparse(std::unique_ptr<BaseAST> &);
 
 extern char *optarg;
 extern int optind, opterr, optopt;
@@ -43,7 +43,8 @@ int main(int argc, char **argv) {
 			outp = optarg;
 			break;
 		case '?':
-			std::cerr << "Never gonna give you up\n" << argv[opt_index] << "\n";
+			std::cerr << "Never gonna give you up\n"
+					  << argv[opt_index] << "\n";
 			throw 114514;
 		default:
 			assert(0);
@@ -61,8 +62,9 @@ int main(int argc, char **argv) {
 
 	std::string outstr;
 	std::ostringstream outstrbuf;
+	Ast_Base::Ost ost(outstrbuf);
 
-	ast->output(outstrbuf, "");
+	ast->output(ost, "");
 	outstr = outstrbuf.str();
 
 	if(output_koopa) {
