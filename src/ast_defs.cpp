@@ -9,6 +9,8 @@ int unnamed_var_cnt = 0;
 int named_var_cnt = 0;
 int if_cnt = 0;
 
+constexpr const char* SHORT_TMP_VAR_NAME = "@_tmp_short";
+
 
 namespace Koopa_Val_Def {
 
@@ -180,6 +182,7 @@ void FuncDefAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix << "fun @" << ident << "():";
 	func_typ->output(outstr, "");
 	outstr << "{\n%entry:\n";
+	outstr << prefix + INDENT << SHORT_TMP_VAR_NAME << " = alloc i32\n";
 	block->output(outstr, prefix);
 	assert(outstr.muted);
 	outstr.unmute();
@@ -236,6 +239,7 @@ void UnaryExpAST::output(Ost& outstr, std::string prefix) const {
 		std::get<0>(unary_exp)->output(outstr, prefix);
 		int now_var = unnamed_var_cnt;
 		unnamed_var_cnt++;
+		stmt_val.top().prepare(outstr, prefix);
 		outstr << prefix << "%" << now_var << " = ";
 		(*unary_op)->output(outstr, "");
 		outstr << stmt_val.top() << "\n";
@@ -424,6 +428,45 @@ void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 	if(!binary_op.has_value()) {
 		return nxt_level->output(outstr, prefix);
 	}
+	if(binary_op.value()->is_logic_op()) {
+		now_level.value()->output(outstr, prefix);
+		Koopa_val lhs = stmt_val.top();
+		stmt_val.pop();
+		lhs.prepare(outstr, prefix);
+		int cur_if_cnt = if_cnt;
+		if_cnt++;
+		outstr << prefix << "br " << lhs << ", %then_short" << cur_if_cnt
+			   << ", %else_short" << cur_if_cnt << "\n";
+		if(binary_op.value()->op == OP_LOR) {
+			outstr << "%then_short" << cur_if_cnt << ":\n";
+			outstr << prefix << "store 1, " << SHORT_TMP_VAR_NAME << "\n";
+			// outstr << prefix << "%" << now_var << " = or 0, 1\n";
+			outstr << prefix << "jump %end_short" << cur_if_cnt << "\n";
+			outstr << "%else_short" << cur_if_cnt << ":\n";
+		} else {
+			outstr << "%else_short" << cur_if_cnt << ":\n";
+			outstr << prefix << "store 0, " << SHORT_TMP_VAR_NAME << "\n";
+			outstr << prefix << "jump %end_short" << cur_if_cnt << "\n";
+			outstr << "%then_short" << cur_if_cnt << ":\n";
+		}
+
+		nxt_level->output(outstr, prefix);
+		Koopa_val rhs = stmt_val.top();
+		stmt_val.pop();
+		rhs.prepare(outstr, prefix);
+		int now_var = unnamed_var_cnt;
+		unnamed_var_cnt++;
+		outstr << prefix << "%" << now_var << " = ne 0, " << rhs << "\n";
+		outstr << prefix << "store %" << now_var << ", " << SHORT_TMP_VAR_NAME << "\n";
+		// outstr << "%" << now_var << " = or 0, " << rhs << "\n";
+		outstr << prefix << "jump %end_short" << cur_if_cnt << "\n";
+		outstr << "%end_short" << cur_if_cnt << ":\n";
+		now_var = unnamed_var_cnt;
+		unnamed_var_cnt++;
+		outstr << prefix << "%" << now_var << " = load " << SHORT_TMP_VAR_NAME << "\n";
+		stmt_val.push(new Koopa_val_temp_symbol(now_var));
+		return;
+	}
 	now_level.value()->output(outstr, prefix);
 	Koopa_val lhs = stmt_val.top();
 	stmt_val.pop();
@@ -432,16 +475,16 @@ void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 	stmt_val.pop();
 	lhs.prepare(outstr, prefix);
 	rhs.prepare(outstr, prefix);
-	if(binary_op.value()->is_logic_op()) {
-		int now_var = unnamed_var_cnt;
-		unnamed_var_cnt++;
-		outstr << prefix << "%" << now_var << " = ne 0, " << lhs;
-		lhs = new Koopa_val_temp_symbol(now_var);
-		now_var = unnamed_var_cnt;
-		unnamed_var_cnt++;
-		outstr << prefix << "%" << now_var << " = ne 0, " << rhs;
-		rhs = new Koopa_val_temp_symbol(now_var);
-	}
+	// if(binary_op.value()->is_logic_op()) {
+	// 	int now_var = unnamed_var_cnt;
+	// 	unnamed_var_cnt++;
+	// 	outstr << prefix << "%" << now_var << " = ne 0, " << lhs;
+	// 	lhs = new Koopa_val_temp_symbol(now_var);
+	// 	now_var = unnamed_var_cnt;
+	// 	unnamed_var_cnt++;
+	// 	outstr << prefix << "%" << now_var << " = ne 0, " << rhs;
+	// 	rhs = new Koopa_val_temp_symbol(now_var);
+	// }
 	int now_var = unnamed_var_cnt;
 	unnamed_var_cnt++;
 	outstr << prefix << "%" << now_var << " = ";
@@ -577,6 +620,7 @@ std::string IfAST::get_else_str() const {
 		return "%end" + std::to_string(if_id);
 	}
 }
+
 std::string IfAST::get_end_str() const {
 	return "%end" + std::to_string(if_id);
 }
