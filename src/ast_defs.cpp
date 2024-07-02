@@ -8,6 +8,7 @@ namespace Ast_Base {
 int unnamed_var_cnt = 0;
 int named_var_cnt = 0;
 int if_cnt = 0;
+int loop_cnt = 0;
 
 constexpr const char* SHORT_TMP_VAR_NAME = "@_tmp_short";
 
@@ -118,6 +119,7 @@ Ost& operator<<(Ost& outstr, Koopa_val const & me) {
 using namespace Koopa_Val_Def;
 
 std::stack<Koopa_val> stmt_val;
+std::stack<int> loop_level;
 
 template<typename T>
 class Symbol_table_stack {
@@ -167,6 +169,23 @@ class End_of_block : public std::exception {
 }   // namespace Exceptions
 */
 
+void enter_sysy_block() {
+	symbol_table.add_table();
+}
+
+void exit_sysy_block() {
+	symbol_table.del_table();
+}
+
+void enter_koopa_block(std::string id, Ost& outstr, std::string prefix) {
+	outstr << id << ":\n";
+}
+
+void exit_koopa_block(Ost& outstr, std::string prefix) {
+	assert(outstr.muted);
+	outstr.unmute();
+}
+
 // name -> value
 // Symbol_table_stack<int> symbol_const;
 
@@ -181,11 +200,11 @@ void CompUnitAST::output(Ost& outstr, std::string prefix) const {
 void FuncDefAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix << "fun @" << ident << "():";
 	func_typ->output(outstr, "");
-	outstr << "{\n%entry:\n";
+	outstr << "{\n";
+	enter_koopa_block("%entry", outstr, prefix);
 	outstr << prefix + INDENT << SHORT_TMP_VAR_NAME << " = alloc i32\n";
 	block->output(outstr, prefix);
-	assert(outstr.muted);
-	outstr.unmute();
+	exit_koopa_block(outstr, prefix);
 	outstr << prefix << "}\n";
 }
 
@@ -194,11 +213,12 @@ void TypAST::output(Ost& outstr, std::string prefix) const {
 }
 
 void BlockAST::output(Ost& outstr, std::string prefix) const {
-	symbol_table.add_table();
-	for(auto& i : items) {
-		i->output(outstr, prefix + INDENT);
-	}
-	symbol_table.del_table();
+	enter_sysy_block();
+	if(!outstr.muted)
+		for(auto& i : items) {
+			i->output(outstr, prefix + INDENT);
+		}
+	exit_sysy_block();
 }
 
 void BlockItemAST::output(Ost& outstr, std::string prefix) const {
@@ -438,16 +458,20 @@ void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 		outstr << prefix << "br " << lhs << ", %then_short" << cur_if_cnt
 			   << ", %else_short" << cur_if_cnt << "\n";
 		if(binary_op.value()->op == OP_LOR) {
-			outstr << "%then_short" << cur_if_cnt << ":\n";
+			enter_koopa_block("%then_short" + std::to_string(cur_if_cnt), outstr, prefix);
 			outstr << prefix << "store 1, " << SHORT_TMP_VAR_NAME << "\n";
 			// outstr << prefix << "%" << now_var << " = or 0, 1\n";
 			outstr << prefix << "jump %end_short" << cur_if_cnt << "\n";
-			outstr << "%else_short" << cur_if_cnt << ":\n";
+			outstr.mute();
+			exit_koopa_block(outstr, prefix);
+			enter_koopa_block("%else_short" + std::to_string(cur_if_cnt), outstr, prefix);
 		} else {
-			outstr << "%else_short" << cur_if_cnt << ":\n";
+			enter_koopa_block("%else_short" + std::to_string(cur_if_cnt), outstr, prefix);
 			outstr << prefix << "store 0, " << SHORT_TMP_VAR_NAME << "\n";
 			outstr << prefix << "jump %end_short" << cur_if_cnt << "\n";
-			outstr << "%then_short" << cur_if_cnt << ":\n";
+			outstr.mute();
+			exit_koopa_block(outstr, prefix);
+			enter_koopa_block("%then_short" + std::to_string(cur_if_cnt), outstr, prefix);
 		}
 
 		nxt_level->output(outstr, prefix);
@@ -460,7 +484,9 @@ void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
 		outstr << prefix << "store %" << now_var << ", " << SHORT_TMP_VAR_NAME << "\n";
 		// outstr << "%" << now_var << " = or 0, " << rhs << "\n";
 		outstr << prefix << "jump %end_short" << cur_if_cnt << "\n";
-		outstr << "%end_short" << cur_if_cnt << ":\n";
+		outstr.mute();
+		exit_koopa_block(outstr, prefix);
+		enter_koopa_block("%end_short" + std::to_string(cur_if_cnt), outstr, prefix);
 		now_var = unnamed_var_cnt;
 		unnamed_var_cnt++;
 		outstr << prefix << "%" << now_var << " = load " << SHORT_TMP_VAR_NAME << "\n";
@@ -631,29 +657,61 @@ void IfAST::output(Ost& outstr, std::string prefix) const {
 	stmt_val.pop();
 	cond_val.prepare(outstr, prefix);
 	outstr << prefix << "br " << cond_val << ", " << get_then_str() << ", " << get_else_str() << "\n";
-	outstr << get_then_str() << ":\n";
-	bool need_jump = true;
+	enter_koopa_block(get_then_str(), outstr, prefix);
 	if_stmt->output(outstr, prefix);
-	if(outstr.muted) {
-		need_jump = false;
-		outstr.unmute();
-	}
-	if(need_jump) {
+	if(!outstr.muted) {
 		outstr << prefix << "jump " << get_end_str() << "\n";
+		outstr.mute();
 	}
+	exit_koopa_block(outstr, prefix);
 	if(else_stmt.has_value()) {
-		outstr << get_else_str() << ":\n";
-		need_jump = true;
+		enter_koopa_block(get_else_str(), outstr, prefix);
 		else_stmt.value()->output(outstr, prefix);
-		if(outstr.muted) {
-			need_jump = false;
-			outstr.unmute();
-		}
-		if(need_jump) {
+		if(!outstr.muted) {
 			outstr << prefix << "jump " << get_end_str() << "\n";
+			outstr.mute();
 		}
+		exit_koopa_block(outstr, prefix);
 	}
-	outstr << get_end_str() << ":\n";
+	enter_koopa_block(get_end_str(), outstr, prefix);
+}
+
+void WhileAST::output(Ost& outstr, std::string prefix) const {
+	int cur_loop_cnt = loop_cnt;
+	loop_cnt++;
+	loop_level.push(cur_loop_cnt);
+	outstr << prefix << "jump %loop_entry" << cur_loop_cnt << "\n";
+	outstr.mute();
+	exit_koopa_block(outstr, prefix);
+	enter_koopa_block("%loop_entry" + std::to_string(cur_loop_cnt), outstr, prefix);
+	cond->output(outstr, prefix);
+	auto cond = stmt_val.top();
+	stmt_val.pop();
+	cond.prepare(outstr, prefix);
+	outstr << prefix
+		   << "br " << cond
+		   << ", %loop_body" << cur_loop_cnt
+		   << ", %loop_end" << cur_loop_cnt
+		   << "\n";
+	outstr.mute();
+	exit_koopa_block(outstr, prefix);
+	enter_koopa_block("%loop_body" + std::to_string(cur_loop_cnt), outstr, prefix);
+	stmt->output(outstr, prefix);
+	outstr << prefix << "jump %loop_entry" << cur_loop_cnt << "\n";
+	outstr.mute();
+	exit_koopa_block(outstr, prefix);
+	loop_level.pop();
+	enter_koopa_block("%loop_end" + std::to_string(cur_loop_cnt), outstr, prefix);
+}
+
+void BreakAST::output(Ost& outstr, std::string prefix) const {
+	outstr << prefix << "jump %loop_end" << loop_level.top() << "\n";
+	outstr.mute();
+}
+
+void ContinueAST::output(Ost& outstr, std::string prefix) const {
+	outstr << prefix << "jump %loop_entry" << loop_level.top() << "\n";
+	outstr.mute();
 }
 
 }   // namespace Ast_Defs

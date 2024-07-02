@@ -71,11 +71,13 @@ class BTypeAST;
 class BinaryOpAST;
 class BlockAST;
 class BlockItemAST;
+class BreakAST;
 class CompUnitAST;
 class ConstDeclAST;
 class ConstDefAST;
 class ConstExpAST;
 class ConstInitValAST;
+class ContinueAST;
 class DeclAST;
 class ExpAST;
 class FuncDefAST;
@@ -92,6 +94,7 @@ class UnaryExpAST;
 class UnaryOpAST;
 class VarDeclAST;
 class VarDefAST;
+class WhileAST;
 
 template<int>
 class BinaryExpAST;
@@ -131,7 +134,7 @@ public:
 
 class StmtAST : public BaseAST {
 public:
-	VariantAstPtr<ReturnAST, LValAssignAST, OptionalExpAST, BlockAST, IfAST> val;
+	VariantAstPtr<ReturnAST, LValAssignAST, OptionalExpAST, BlockAST, IfAST, WhileAST, BreakAST, ContinueAST> val;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -297,6 +300,23 @@ public:
 	std::string get_then_str() const;
 	std::string get_else_str() const;
 	std::string get_end_str() const;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class WhileAST : public BaseAST {
+public:
+	std::unique_ptr<ExpAST> cond;
+	std::unique_ptr<StmtAST> stmt;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class BreakAST : public BaseAST {
+public:
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class ContinueAST : public BaseAST {
+public:
 	void output(Ost &outstr, std::string prefix) const override;
 };
 

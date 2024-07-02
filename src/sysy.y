@@ -39,6 +39,8 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 %token LE LT GE GT EQ NEQ
 // logic and & or & not
 %token LNOT LAND LOR
+%token WHILE
+%token BREAK CONTINUE
 %token <str_val> IDENT
 %token <int_val> INT_CONST
 
@@ -244,7 +246,22 @@ Stmt:
 		auto ast = new StmtAST();
 		ast->val = cast_ast<IfAST>($1);
 		$$ = ast;
-	};
+	} | WHILE '(' Exp ')' Stmt {
+		auto ast = new StmtAST();
+		auto while_ast = new WhileAST();
+		while_ast->cond = cast_ast<ExpAST>($3);
+		while_ast->stmt = cast_ast<StmtAST>($5);
+		ast->val = cast_ast<WhileAST>(while_ast);
+		$$ = ast;
+	} | BREAK ';' {
+		auto ast = new StmtAST;
+		ast->val = std::make_unique<BreakAST>();
+		$$ = ast;
+	} | CONTINUE ';' {
+		auto ast = new StmtAST;
+		ast->val = std::make_unique<ContinueAST>();
+		$$ = ast;
+	}; 
 
 If:
 	IF '(' Exp ')' Stmt %prec LOWER_THAN_ELSE{
