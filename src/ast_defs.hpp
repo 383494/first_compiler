@@ -80,7 +80,10 @@ class ConstInitValAST;
 class ContinueAST;
 class DeclAST;
 class ExpAST;
+class FuncCallAST;
+class FuncCallParamsAST;
 class FuncDefAST;
+class FuncDefParamsAST;
 class IfAST;
 class InitValAST;
 class LValAST;
@@ -101,13 +104,14 @@ class BinaryExpAST;
 
 class CompUnitAST : public BaseAST {
 public:
-	std::unique_ptr<FuncDefAST> func_def;
+	std::list<std::unique_ptr<FuncDefAST>> func_def;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
 class FuncDefAST : public BaseAST {
 public:
 	std::unique_ptr<TypAST> func_typ;
+	std::optional<std::unique_ptr<FuncDefParamsAST>> params;
 	std::string ident;
 	std::unique_ptr<BlockAST> block;
 	void output(Ost &outstr, std::string prefix) const override;
@@ -117,6 +121,7 @@ public:
 class TypAST : public BaseAST {
 public:
 	std::string typ;
+	bool is_void;
 	void output(Ost &outstr, std::string) const override;
 };
 
@@ -200,11 +205,11 @@ class BinaryExpAST<0> : public BinaryExpAST_Base<BinaryExpAST<0>, UnaryExpAST> {
 
 // clang-format off
 using MulExpAST = BinaryExpAST<0>;
-using AddExpAST = BinaryExpAST<1>; template class BinaryExpAST<1>;
-using RelExpAST = BinaryExpAST<2>; template class BinaryExpAST<2>;
-using EqExpAST = BinaryExpAST<3>; template class BinaryExpAST<3>;
-using LAndExpAST = BinaryExpAST<4>; template class BinaryExpAST<4>;
-using LOrExpAST = BinaryExpAST<5>; template class BinaryExpAST<5>;
+using AddExpAST = BinaryExpAST<1>;	template class BinaryExpAST<1>;
+using RelExpAST = BinaryExpAST<2>;	template class BinaryExpAST<2>;
+using EqExpAST = BinaryExpAST<3>;	template class BinaryExpAST<3>;
+using LAndExpAST = BinaryExpAST<4>;	template class BinaryExpAST<4>;
+using LOrExpAST = BinaryExpAST<5>;	template class BinaryExpAST<5>;
 // clang-format on
 
 class DeclAST : public BaseAST {
@@ -317,6 +322,27 @@ public:
 
 class ContinueAST : public BaseAST {
 public:
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class FuncDefParamsAST : public BaseAST {
+public:
+	std::list<std::pair<std::unique_ptr<BTypeAST>, std::string>> params;
+	void output(Ost &outstr, std::string prefix) const override;
+	void output_save(Ost &outstr, std::string prefix) const;
+};
+
+class FuncCallAST : public BaseAST {
+public:
+	std::string func;
+	std::unique_ptr<FuncCallParamsAST> params;
+	void output(Ost &outstr, std::string prefix) const override;
+};
+
+class FuncCallParamsAST : public BaseAST {
+public:
+	std::list<std::unique_ptr<ExpAST>> params;
+	int get_param_cnt() const;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 

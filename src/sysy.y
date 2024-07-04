@@ -34,7 +34,8 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 %nonassoc LOWER_THAN_ELSE
 %nonassoc ELSE
 
-%token INT RETURN CONST
+%token VOID INT 
+%token RETURN CONST
 %token ADD SUB MUL DIV MOD
 %token LE LT GE GT EQ NEQ
 // logic and & or & not
@@ -44,12 +45,13 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 %token <str_val> IDENT
 %token <int_val> INT_CONST
 
-%type <ast_val> FuncDef FuncType Block BlockItemList BlockItem Stmt 
+%type <ast_val> CompUnit FuncDef FuncType FuncDefParams FuncDefParam FuncCallParams
+%type <ast_val> Block BlockItemList BlockItem Stmt 
 %type <ast_val> If
 %type <ast_val> Decl ConstDecl VarDecl BType ConstDef ConstDefList ConstInitVal VarDef VarDefList InitVal LVal
 %type <ast_val> PrimaryExp ConstExp Exp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
 
-// All below are BINARY operators.
+// BINARY operators.
 %type <ast_val> AddOp SubOp MulOp DivOp ModOp
 %type <ast_val> LeOp LtOp GeOp GtOp EqOp NeqOp
 %type <ast_val> LAndOp LOrOp
@@ -59,16 +61,33 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 
 %%
 
+Compile_loader:
+	CompUnit {
+		ast = cast_ast<CompUnitAST>($1);
+	}
+	;
+
 CompUnit
-	: FuncDef {
-		auto comp_unit = std::make_unique<CompUnitAST>();
-		comp_unit->func_def = cast_ast<FuncDefAST>($1);
-		ast = std::move(comp_unit);
+	: CompUnit FuncDef {
+		auto ast = (CompUnitAST*)$1;
+		ast->func_def.push_back(cast_ast<FuncDefAST>($2));
+		$$ = ast;
+	} | FuncDef {
+		auto ast = new CompUnitAST();
+		ast->func_def.push_back(cast_ast<FuncDefAST>($1));
+		$$ = ast;
 	}
 	;
 
 FuncDef
-	: FuncType IDENT '(' ')' Block {
+	: FuncType IDENT '(' FuncDefParams ')' Block {
+		auto ast = new FuncDefAST();
+		ast->func_typ = cast_ast<TypAST>($1);
+		ast->ident = *std::unique_ptr<std::string>($2);
+		ast->params = cast_ast<FuncDefParamsAST>($4);
+		ast->block = cast_ast<BlockAST>($6);
+		$$ = ast;
+	} | FuncType IDENT '(' ')' Block {
 		auto ast = new FuncDefAST();
 		ast->func_typ = cast_ast<TypAST>($1);
 		ast->ident = *std::unique_ptr<std::string>($2);
@@ -81,6 +100,42 @@ FuncType
 	: INT {
 		auto ast = new TypAST();
 		ast->typ = "i32";
+		$$ = ast;
+	} | VOID {
+		auto ast = new TypAST();
+		ast->is_void = true;
+		$$ = ast;
+	}
+	;
+
+FuncDefParams:
+	FuncDefParams ',' FuncDefParam {
+		auto ast = (FuncDefParamsAST*)$1;
+		auto param = (FuncDefParamsAST*)$3;
+		ast->params.splice(ast->params.end(), param->params);
+		delete param;
+		$$ = ast;
+	} | FuncDefParam {
+		$$ = $1;
+	}
+	;
+
+FuncDefParam:
+	BType IDENT {
+		auto ast = new FuncDefParamsAST();
+		ast->params.push_back({cast_ast<BTypeAST>($1), *$2});
+		$$ = ast;
+	}
+	;
+
+FuncCallParams:
+	FuncCallParams ',' Exp {
+		auto ast = (FuncCallParamsAST *)$1;
+		ast->params.push_back(cast_ast<ExpAST>($3));
+		$$ = ast;
+	} | Exp {
+		auto ast = new FuncCallParamsAST();
+		ast->params.push_back(cast_ast<ExpAST>($1));
 		$$ = ast;
 	}
 	;
@@ -318,8 +373,17 @@ UnaryExp:
 		auto ast = new UnaryExpAST();
 		ast->unary_exp = cast_ast<PrimaryExpAST>($1);
 		$$ = ast;
-	}
-	| UnaryOp UnaryExp{
+	} | IDENT '(' ')' {
+		auto ast = new FuncCallAST();
+		ast->func = *$1;
+		ast->params = std::make_unique<FuncCallParamsAST>();
+		$$ = ast;
+	} | IDENT '(' FuncCallParams ')' {
+		auto ast = new FuncCallAST();
+		ast->func = *$1;
+		ast->params = cast_ast<FuncCallParamsAST>($3);
+		$$ = ast;
+	} | UnaryOp UnaryExp{
 		auto ast = new UnaryExpAST();
 		ast->unary_op = cast_ast<UnaryOpAST>($1);
 		ast->unary_exp = cast_ast<UnaryExpAST>($2);

@@ -18,7 +18,9 @@ namespace Koopa_Val_Def {
 enum Koopa_value_type {
 	KOOPA_VALUE_TYPE_IMMEDIATE,
 	KOOPA_VALUE_TYPE_TEMP,
-	KOOPA_VALUE_TYPE_NAMED
+	KOOPA_VALUE_TYPE_NAMED,
+	KOOPA_VALUE_TYPE_GLOBAL_FUNCTION,
+	KOOPA_VALUE_TYPE_GLOBAL_NAMED,
 };
 
 class Koopa_val_base {
@@ -76,6 +78,17 @@ public:
 	Koopa_value_type val_type() const override { return KOOPA_VALUE_TYPE_NAMED; }
 };
 
+class Koopa_val_global_func : public Koopa_val_base {
+private:
+	FuncDefAST const * func;
+
+public:
+	bool is_void() const { return func->func_typ->is_void; }
+	Koopa_val_global_func(FuncDefAST const * func) { this->func = func; }
+	std::string get_str() const override { return "@" + func->ident; }
+	Koopa_value_type val_type() const override { return KOOPA_VALUE_TYPE_GLOBAL_FUNCTION; }
+};
+
 class Koopa_val {
 private:
 	std::shared_ptr<Koopa_val_base> val;
@@ -87,18 +100,16 @@ public:
 		val = std::shared_ptr<Koopa_val_base>(obj);
 	}
 	int get_im_val() const {
-		if(val_type() == KOOPA_VALUE_TYPE_IMMEDIATE) {
-			return std::static_pointer_cast<Koopa_val_im>(val)->get_im_val();
-		} else {
-			assert(0);
-		}
+		assert(val_type() == KOOPA_VALUE_TYPE_IMMEDIATE);
+		return std::static_pointer_cast<Koopa_val_im>(val)->get_im_val();
 	}
 	std::string get_named_name() const {
-		if(val_type() == KOOPA_VALUE_TYPE_NAMED) {
-			return std::static_pointer_cast<Koopa_val_named_symbol>(val)->get_id();
-		} else {
-			assert(0);
-		}
+		assert(val_type() == KOOPA_VALUE_TYPE_NAMED);
+		return std::static_pointer_cast<Koopa_val_named_symbol>(val)->get_id();
+	}
+	bool is_func_void() const {
+		assert(val->val_type() == KOOPA_VALUE_TYPE_GLOBAL_FUNCTION);
+		return std::static_pointer_cast<Koopa_val_global_func>(val)->is_void();
 	}
 	Koopa_value_type val_type() const { return val->val_type(); }
 	std::string get_str() const {
@@ -194,15 +205,29 @@ namespace Ast_Defs {
 template class BinaryExpAST_Base<BinaryExpAST<0>, UnaryExpAST>;
 
 void CompUnitAST::output(Ost& outstr, std::string prefix) const {
-	func_def->output(outstr, prefix);
+	enter_sysy_block();
+	for(auto& i : func_def) {
+		i->output(outstr, prefix);
+	}
+	exit_sysy_block();
 }
 
 void FuncDefAST::output(Ost& outstr, std::string prefix) const {
-	outstr << prefix << "fun @" << ident << "():";
-	func_typ->output(outstr, "");
-	outstr << "{\n";
+	symbol_table.insert({ident, Koopa_val(new Koopa_val_global_func(this))});
+	outstr << prefix << "fun @" << ident << "(";
+	if(params.has_value()) {
+		params.value()->output(outstr, "");
+	}
+	outstr << ")";
+	if(!func_typ->is_void) {
+		func_typ->output(outstr, ": ");
+	}
+	outstr << " {\n";
 	enter_koopa_block("%entry", outstr, prefix);
 	outstr << prefix + INDENT << SHORT_TMP_VAR_NAME << " = alloc i32\n";
+	if(params.has_value()) {
+		params.value()->output_save(outstr, prefix + INDENT);
+	}
 	block->output(outstr, prefix);
 	exit_koopa_block(outstr, prefix);
 	outstr << prefix << "}\n";
@@ -213,11 +238,13 @@ void TypAST::output(Ost& outstr, std::string prefix) const {
 }
 
 void BlockAST::output(Ost& outstr, std::string prefix) const {
+	if(outstr.muted) {
+		return;
+	}
 	enter_sysy_block();
-	if(!outstr.muted)
-		for(auto& i : items) {
-			i->output(outstr, prefix + INDENT);
-		}
+	for(auto& i : items) {
+		i->output(outstr, prefix + INDENT);
+	}
 	exit_sysy_block();
 }
 
@@ -355,90 +382,38 @@ bool BinaryOpAST::is_logic_op() {
 void BinaryOpAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix;
 	switch(op) {
-	case OP_ADD:
-		outstr << "add ";
-		break;
-	case OP_SUB:
-		outstr << "sub ";
-		break;
-	case OP_MUL:
-		outstr << "mul ";
-		break;
-	case OP_DIV:
-		outstr << "div ";
-		break;
-	case OP_MOD:
-		outstr << "mod ";
-		break;
-	case OP_GT:
-		outstr << "gt ";
-		break;
-	case OP_GE:
-		outstr << "ge ";
-		break;
-	case OP_LT:
-		outstr << "lt ";
-		break;
-	case OP_LE:
-		outstr << "le ";
-		break;
-	case OP_EQ:
-		outstr << "eq ";
-		break;
-	case OP_NEQ:
-		outstr << "ne ";
-		break;
-	case OP_LAND:
-		outstr << "and ";
-		break;
-	case OP_LOR:
-		outstr << "or ";
-		break;
+	case OP_ADD: outstr << "add "; break;
+	case OP_SUB: outstr << "sub "; break;
+	case OP_MUL: outstr << "mul "; break;
+	case OP_DIV: outstr << "div "; break;
+	case OP_MOD: outstr << "mod "; break;
+	case OP_GT: outstr << "gt "; break;
+	case OP_GE: outstr << "ge "; break;
+	case OP_LT: outstr << "lt "; break;
+	case OP_LE: outstr << "le "; break;
+	case OP_EQ: outstr << "eq "; break;
+	case OP_NEQ: outstr << "ne "; break;
+	case OP_LAND: outstr << "and "; break;
+	case OP_LOR: outstr << "or "; break;
 	default: assert(0);
 	}
 }
 
 int BinaryOpAST::calc(int lhs, int rhs) {
 	switch(op) {
-	case OP_ADD:
-		return lhs + rhs;
-		break;
-	case OP_SUB:
-		return lhs - rhs;
-		break;
-	case OP_MUL:
-		return lhs * rhs;
-		break;
-	case OP_DIV:
-		return lhs / rhs;
-		break;
-	case OP_MOD:
-		return lhs % rhs;
-		break;
-	case OP_GT:
-		return lhs > rhs;
-		break;
-	case OP_GE:
-		return lhs >= rhs;
-		break;
-	case OP_LT:
-		return lhs < rhs;
-		break;
-	case OP_LE:
-		return lhs <= rhs;
-		break;
-	case OP_EQ:
-		return lhs == rhs;
-		break;
-	case OP_NEQ:
-		return lhs != rhs;
-		break;
-	case OP_LAND:
-		return lhs && rhs;
-		break;
-	case OP_LOR:
-		return lhs || rhs;
-		break;
+	case OP_ADD: return lhs + rhs;
+	case OP_SUB: return lhs - rhs;
+	case OP_MUL: return lhs * rhs;
+	case OP_DIV: return lhs / rhs;
+	case OP_MOD: return lhs % rhs;
+	case OP_GT: return lhs > rhs;
+	case OP_GE: return lhs >= rhs;
+	case OP_LT: return lhs < rhs;
+	case OP_LE: return lhs <= rhs;
+	case OP_EQ: return lhs == rhs;
+	case OP_NEQ: return lhs != rhs;
+	case OP_LAND: return lhs && rhs;
+	case OP_LOR: return lhs || rhs;
 	default: assert(0);
 	}
 }
@@ -712,6 +687,68 @@ void BreakAST::output(Ost& outstr, std::string prefix) const {
 void ContinueAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix << "jump %loop_entry" << loop_level.top() << "\n";
 	outstr.mute();
+}
+
+void FuncDefParamsAST::output(Ost& outstr, std::string prefix) const {
+	bool is_first_param = true;
+	for(auto& i : params) {
+		if(is_first_param) {
+			is_first_param = false;
+		} else {
+			outstr << ", ";
+		}
+		outstr << "@" << i.second << "_param: ";
+		i.first->output(outstr, "");
+	}
+}
+
+void FuncDefParamsAST::output_save(Ost& outstr, std::string prefix) const {
+	for(auto& i : params) {
+		auto val = new Koopa_val_named_symbol();
+		val->set_id(i.second);
+		outstr << prefix << "@" << val->get_id() << " = alloc ";
+		i.first->output(outstr, "");
+		outstr << "\n"
+			   << prefix << "store @" << i.second << "_param, @" << val->get_id() << "\n";
+		symbol_table.insert({i.second, val});
+	}
+}
+
+void FuncCallParamsAST::output(Ost& outstr, std::string prefix) const {
+	for(auto i = params.rbegin(); i != params.rend(); i++) {
+		(*i)->output(outstr, prefix);
+	}
+}
+
+int FuncCallParamsAST::get_param_cnt() const {
+	return params.size();
+}
+
+void FuncCallAST::output(Ost& outstr, std::string prefix) const {
+	params->output(outstr, prefix);
+	int param_cnt = params->get_param_cnt();
+	int now_var = -1;
+	if(param_cnt != 0) {
+		now_var = unnamed_var_cnt;
+		unnamed_var_cnt++;
+		outstr << prefix << "%" << now_var << " = ";
+	}
+	auto func_in_koopa = symbol_table[func];
+	if(func_in_koopa.is_func_void()) {
+		outstr << prefix;
+	}
+	outstr << "call " << func_in_koopa.get_str() << "(";
+	for(int i = 0; i < param_cnt; i++) {
+		if(i != 0) {
+			outstr << ", ";
+		}
+		outstr << stmt_val.top();
+		stmt_val.pop();
+	}
+	outstr << ")\n";
+	if(param_cnt != 0) {
+		stmt_val.push(Koopa_val(new Koopa_val_temp_symbol(now_var)));
+	}
 }
 
 }   // namespace Ast_Defs
