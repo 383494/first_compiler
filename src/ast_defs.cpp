@@ -80,12 +80,20 @@ public:
 
 class Koopa_val_global_func : public Koopa_val_base {
 private:
-	FuncDefAST const * func;
+	bool is_func_void;
+	std::string ident;
 
 public:
-	bool is_void() const { return func->func_typ->is_void; }
-	Koopa_val_global_func(FuncDefAST const * func) { this->func = func; }
-	std::string get_str() const override { return "@" + func->ident; }
+	Koopa_val_global_func(std::string const & id, bool is_void) {
+		is_func_void = is_void;
+		ident = "@" + id;
+	}
+	Koopa_val_global_func(FuncDefAST const * func) {
+		is_func_void = func->func_typ->is_void;
+		ident = "@" + func->ident;
+	}
+	bool is_void() const { return is_func_void; }
+	std::string get_str() const override { return ident; }
 	Koopa_value_type val_type() const override { return KOOPA_VALUE_TYPE_GLOBAL_FUNCTION; }
 };
 
@@ -128,6 +136,19 @@ Ost& operator<<(Ost& outstr, Koopa_val const & me) {
 }   // namespace Koopa_Val_Def
 
 using namespace Koopa_Val_Def;
+
+namespace Sysy_Library {
+std::pair<std::string, bool> sysy_lib_funcs[] = {
+	{"getint", false},
+	{"getch", false},
+	{"getarray", false},
+	{"putint", true},
+	{"putch", true},
+	{"putarray", true},
+	{"starttime", true},
+	{"stoptime", true},
+};
+}
 
 std::stack<Koopa_val> stmt_val;
 std::stack<int> loop_level;
@@ -216,6 +237,9 @@ decl @stoptime()
 
 )";
 	enter_sysy_block();
+	for(auto [func_id, is_void] : Sysy_Library::sysy_lib_funcs) {
+		symbol_table.insert({func_id, Koopa_val(new Koopa_val_global_func(func_id, is_void))});
+	}
 	for(auto& i : func_def) {
 		i->output(outstr, prefix);
 	}

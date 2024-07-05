@@ -33,10 +33,13 @@ public:
 		this->typ = typ;
 		assigned = (typ != ASM_VAL_TYPE_STACK);
 	}
-	void assign_from_t0(auto &outstr) {
+	void assign_from_reg(auto &outstr, std::string reg) {
 		assert(typ == ASM_VAL_TYPE_STACK);
-		outstr << "sw t0, " << data << "(sp)\n";
+		outstr << "sw " << reg << ", " << data << "(sp)\n";
 		assigned = true;
+	}
+	void assign_from_t0(auto &outstr) {
+		assign_from_reg(outstr, "t0");
 	}
 	void load_to_reg(auto &outstr, std::string reg) const {
 		switch(typ) {
@@ -146,6 +149,7 @@ void dfs_ir(const koopa_raw_program_t &prog, Outp &outstr) {
 }
 
 void dfs_ir(const koopa_raw_function_t &func, Outp &outstr) {
+	if(func->bbs.len == 0) return;
 	outstr << ".text\n";
 	outstr << ".global " << (func->name + 1) << "\n";
 	outstr << (func->name + 1) << ":\n";
@@ -259,6 +263,7 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 			}
 		}
 		outstr << "call " << val->kind.data.call.callee->name + 1 << "\n";
+		valmp[(void *)val]->assign_from_reg(outstr, "a0");
 		break;
 	}
 	default:
