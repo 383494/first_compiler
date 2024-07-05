@@ -205,6 +205,16 @@ namespace Ast_Defs {
 template class BinaryExpAST_Base<BinaryExpAST<0>, UnaryExpAST>;
 
 void CompUnitAST::output(Ost& outstr, std::string prefix) const {
+	outstr << R"(decl @getint(): i32
+decl @getch(): i32
+decl @getarray(*i32): i32
+decl @putint(i32)
+decl @putch(i32)
+decl @putarray(i32, *i32)
+decl @starttime()
+decl @stoptime()
+
+)";
 	enter_sysy_block();
 	for(auto& i : func_def) {
 		i->output(outstr, prefix);
@@ -728,14 +738,13 @@ void FuncCallAST::output(Ost& outstr, std::string prefix) const {
 	params->output(outstr, prefix);
 	int param_cnt = params->get_param_cnt();
 	int now_var = -1;
-	if(param_cnt != 0) {
-		now_var = unnamed_var_cnt;
-		unnamed_var_cnt++;
-		outstr << prefix << "%" << now_var << " = ";
-	}
 	auto func_in_koopa = symbol_table[func];
 	if(func_in_koopa.is_func_void()) {
 		outstr << prefix;
+	} else {
+		now_var = unnamed_var_cnt;
+		unnamed_var_cnt++;
+		outstr << prefix << "%" << now_var << " = ";
 	}
 	outstr << "call " << func_in_koopa.get_str() << "(";
 	for(int i = 0; i < param_cnt; i++) {
@@ -746,7 +755,7 @@ void FuncCallAST::output(Ost& outstr, std::string prefix) const {
 		stmt_val.pop();
 	}
 	outstr << ")\n";
-	if(param_cnt != 0) {
+	if(!func_in_koopa.is_func_void()) {
 		stmt_val.push(Koopa_val(new Koopa_val_temp_symbol(now_var)));
 	}
 }
