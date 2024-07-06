@@ -225,7 +225,6 @@ ConstExp:
 
 VarDecl:
 	Type VarDefList ';' {
-	// TODO
 		auto ast = (VarDeclAST*)$2;
 		ast->typ = cast_ast<TypeAST>($1);
 		$$ = ast;

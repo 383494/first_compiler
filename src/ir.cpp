@@ -14,6 +14,7 @@ enum Asm_val_type {
 	ASM_VAL_TYPE_IMMEDIATE,
 	ASM_VAL_TYPE_STACK,
 	ASM_VAL_TYPE_REGISTER,
+	ASM_VAL_TYPE_GLOBAL_VAR,
 };
 
 class Asm_val {
@@ -34,8 +35,15 @@ public:
 		assigned = (typ != ASM_VAL_TYPE_STACK);
 	}
 	void assign_from_reg(auto &outstr, std::string reg) {
-		assert(typ == ASM_VAL_TYPE_STACK);
-		outstr << "sw " << reg << ", " << data << "(sp)\n";
+		if(typ == ASM_VAL_TYPE_GLOBAL_VAR) {
+			assert(reg != "t1");
+			outstr << "la t1, " << data << "\n"
+				   << "sw " << reg << ", 0(t1)\n";
+		} else if(typ == ASM_VAL_TYPE_STACK) {
+			outstr << "sw " << reg << ", " << data << "(sp)\n";
+		} else {
+			assert(0);
+		}
 		assigned = true;
 	}
 	void assign_from_t0(auto &outstr) {
@@ -51,6 +59,10 @@ public:
 			break;
 		case ASM_VAL_TYPE_REGISTER:
 			outstr << "mv " << reg << ", " << data << "\n";
+			break;
+		case ASM_VAL_TYPE_GLOBAL_VAR:
+			outstr << "la t0, " << data << "\n"
+				   << "lw " << reg << ", 0(t0)\n";
 			break;
 		default: assert(0);
 		}
@@ -141,8 +153,11 @@ int get_function_mem(const koopa_raw_function_t &func) {
 }
 
 void dfs_ir(const koopa_raw_program_t &prog, Outp &outstr) {
+	for(size_t i = 0; i < prog.values.len; i++) {
+		koopa_raw_value_t val = (koopa_raw_value_t)prog.values.buffer[i];
+		dfs_ir(val, outstr);
+	}
 	for(size_t i = 0; i < prog.funcs.len; i++) {
-		assert(prog.funcs.kind == KOOPA_RSIK_FUNCTION);
 		koopa_raw_function_t func = (koopa_raw_function_t)prog.funcs.buffer[i];
 		dfs_ir(func, outstr);
 	}
@@ -187,8 +202,9 @@ void dfs_ir(const koopa_raw_basic_block_t &blk, Outp &outstr) {
 }
 
 void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
-	if(val->ty->tag != KOOPA_RTT_UNIT && val->kind.tag != KOOPA_RVT_INTEGER) {
-		if(val->kind.tag == KOOPA_RVT_FUNC_ARG_REF) {
+	const auto &kind = val->kind;
+	if(val->ty->tag != KOOPA_RTT_UNIT && kind.tag != KOOPA_RVT_INTEGER) {
+		if(kind.tag == KOOPA_RVT_FUNC_ARG_REF || kind.tag == KOOPA_RVT_GLOBAL_ALLOC) {
 			if(valmp.contains((void *)val)) {
 				return;
 			}
@@ -199,7 +215,6 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 			}
 		}
 	}
-	const auto &kind = val->kind;
 	switch(kind.tag) {
 	case KOOPA_RVT_BINARY:
 		if(!valmp.contains((void *)&kind.data.binary)) {
@@ -238,12 +253,12 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 		outstr << "j " << blk_id_mp[kind.data.jump.target] << "\n";
 		break;
 	case KOOPA_RVT_FUNC_ARG_REF: {
-		int index = val->kind.data.func_arg_ref.index;
+		int index = kind.data.func_arg_ref.index;
 		std::shared_ptr<Asm_val> asm_val;
 		if(index < 8) {
 			asm_val.reset(new Asm_val(std::string("a") + std::to_string(index), ASM_VAL_TYPE_REGISTER));
 		} else {
-			int mem = Global_State::function_stack_mem.top() + index - 8;
+			int mem = Global_State::function_stack_mem.top() + (index - 8) * 4;
 			asm_val.reset(new Asm_val(mem, ASM_VAL_TYPE_STACK));
 			asm_val->assigned = true;
 		}
@@ -251,7 +266,7 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 		break;
 	}
 	case KOOPA_RVT_CALL: {
-		auto &args = val->kind.data.call.args;
+		auto &args = kind.data.call.args;
 		for(int i = 0; i < args.len; i++) {
 			dfs_ir((koopa_raw_value_t)args.buffer[i], outstr);
 			auto asm_val = valmp[(void *)args.buffer[i]];
@@ -259,13 +274,26 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 			if(i < 8) {
 				outstr << "mv a" << i << ", t0\n";
 			} else {
-				outstr << "sw t0, " << Global_State::function_stack_mem.top() + i - 8 << "(sp)\n";
+				outstr << "sw t0, " << (i - 8) * 4 << "(sp)\n";
 			}
 		}
-		outstr << "call " << val->kind.data.call.callee->name + 1 << "\n";
-		valmp[(void *)val]->assign_from_reg(outstr, "a0");
+		outstr << "call " << kind.data.call.callee->name + 1 << "\n";
+		if(kind.data.call.callee->ty->data.function.ret->tag != KOOPA_RTT_UNIT) {
+			valmp[(void *)val]->assign_from_reg(outstr, "a0");
+		}
 		break;
 	}
+	case KOOPA_RVT_GLOBAL_ALLOC:
+		outstr << ".data\n"
+			   << ".global " << (val->name + 1) << "\n"
+			   << (val->name + 1) << ":\n";
+		if(kind.data.global_alloc.init->kind.tag == KOOPA_RVT_ZERO_INIT) {
+			outstr << ".zero 4\n";
+		} else {
+			outstr << ".word " << kind.data.global_alloc.init->kind.data.integer.value << "\n";
+		}
+		valmp[(void *)val] = std::make_shared<Asm_val>(val->name + 1, ASM_VAL_TYPE_GLOBAL_VAR);
+		break;
 	default:
 		std::cerr << "koopa_raw_value_t not handled: " << kind.tag << '\n';
 		assert(0);

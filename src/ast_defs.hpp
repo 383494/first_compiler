@@ -127,6 +127,7 @@ public:
 class BlockAST : public BaseAST {
 public:
 	std::list<std::unique_ptr<BlockItemAST>> items;
+	void output_base(Ost &outstr, std::string prefix, bool update_symbol_table) const;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 

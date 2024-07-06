@@ -256,6 +256,7 @@ decl @stoptime()
 
 void FuncDefAST::output(Ost& outstr, std::string prefix) const {
 	symbol_table.insert({ident, Koopa_val(new Koopa_val_global_func(this))});
+	enter_sysy_block();
 	outstr << prefix << "fun @" << ident << "(";
 	if(params.has_value()) {
 		params.value()->output(outstr, "");
@@ -270,24 +271,37 @@ void FuncDefAST::output(Ost& outstr, std::string prefix) const {
 	if(params.has_value()) {
 		params.value()->output_save(outstr, prefix + INDENT);
 	}
-	block->output(outstr, prefix);
+	block->output_base(outstr, prefix, false);
+	if(!outstr.muted && func_typ->is_void) {
+		outstr << prefix + INDENT << "ret\n";
+		outstr.mute();
+	}
 	exit_koopa_block(outstr, prefix);
 	outstr << prefix << "}\n";
+	exit_sysy_block();
 }
 
 void TypeAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix << typ;
 }
 
-void BlockAST::output(Ost& outstr, std::string prefix) const {
+void BlockAST::output_base(Ost& outstr, std::string prefix, bool update_symbol_table) const {
 	if(outstr.muted) {
 		return;
 	}
-	enter_sysy_block();
+	if(update_symbol_table) {
+		enter_sysy_block();
+	}
 	for(auto& i : items) {
 		i->output(outstr, prefix + INDENT);
 	}
-	exit_sysy_block();
+	if(update_symbol_table) {
+		exit_sysy_block();
+	}
+}
+
+void BlockAST::output(Ost& outstr, std::string prefix) const {
+	output_base(outstr, prefix, true);
 }
 
 void BlockItemAST::output(Ost& outstr, std::string prefix) const {
@@ -631,11 +645,11 @@ void VarDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) con
 		if(is_global) {
 			outstr << ", " << val.value()->exp->calc() << "\n";
 		} else {
+			outstr << "\n";
 			val.value()->output(outstr, prefix);
 			Koopa_val last_val = stmt_val.top();
 			stmt_val.pop();
 			last_val.prepare(outstr, prefix);
-			outstr << "\n";
 			outstr << prefix << "store " << last_val << ", @" << reg_var->get_id() << "\n";
 		}
 	} else {
@@ -803,6 +817,12 @@ void FuncCallAST::output(Ost& outstr, std::string prefix) const {
 	int param_cnt = params->get_param_cnt();
 	int now_var = -1;
 	auto func_in_koopa = symbol_table[func];
+	std::list<Koopa_val> args;
+	for(int i = 0; i < param_cnt; i++) {
+		args.push_back(stmt_val.top());
+		args.back().prepare(outstr, prefix);
+		stmt_val.pop();
+	}
 	if(func_in_koopa.is_func_void()) {
 		outstr << prefix;
 	} else {
@@ -811,12 +831,14 @@ void FuncCallAST::output(Ost& outstr, std::string prefix) const {
 		outstr << prefix << "%" << now_var << " = ";
 	}
 	outstr << "call " << func_in_koopa.get_str() << "(";
-	for(int i = 0; i < param_cnt; i++) {
-		if(i != 0) {
+	bool first_param = true;
+	for(auto& i : args) {
+		if(first_param) {
+			first_param = false;
+		} else {
 			outstr << ", ";
 		}
-		outstr << stmt_val.top();
-		stmt_val.pop();
+		outstr << i;
 	}
 	outstr << ")\n";
 	if(!func_in_koopa.is_func_void()) {
