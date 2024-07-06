@@ -240,8 +240,16 @@ decl @stoptime()
 	for(auto [func_id, is_void] : Sysy_Library::sysy_lib_funcs) {
 		symbol_table.insert({func_id, Koopa_val(new Koopa_val_global_func(func_id, is_void))});
 	}
-	for(auto& i : func_def) {
-		i->output(outstr, prefix);
+	for(auto& i : decls) {
+		switch(i.index()) {
+		case 0:
+			std::get<0>(i)->output(outstr, prefix);
+			break;
+		case 1:
+			std::get<1>(i)->output_global(outstr, prefix);
+			break;
+		default:;
+		}
 	}
 	exit_sysy_block();
 }
@@ -267,7 +275,7 @@ void FuncDefAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix << "}\n";
 }
 
-void TypAST::output(Ost& outstr, std::string prefix) const {
+void TypeAST::output(Ost& outstr, std::string prefix) const {
 	outstr << prefix << typ;
 }
 
@@ -544,14 +552,21 @@ void DeclAST::output(Ost& outstr, std::string prefix) const {
 			   decl);
 }
 
+void DeclAST::output_global(Ost& outstr, std::string prefix) const {
+	std::visit([&](auto&& x) {
+		x->output_global(outstr, prefix);
+	},
+			   decl);
+}
+
 void ConstDeclAST::output(Ost& outstr, std::string prefix) const {
 	for(auto& i : defs) {
 		i->output(outstr, prefix);
 	}
 }
 
-void BTypeAST::output(Ost& outstr, std::string prefix) const {
-	outstr << prefix << "i32";
+void ConstDeclAST::output_global(Ost& outstr, std::string prefix) const {
+	output(outstr, prefix);
 }
 
 void ConstDefAST::output(Ost& outstr, std::string prefix) const {
@@ -592,25 +607,50 @@ int ConstExpAST::calc() {
 
 void VarDeclAST::output(Ost& outstr, std::string prefix) const {
 	for(auto& i : defs) {
-		i->typ = std::make_unique<BTypeAST>(*typ);
+		i->typ = std::make_unique<TypeAST>(*typ);
 		i->output(outstr, prefix);
 	}
 }
 
-void VarDefAST::output(Ost& outstr, std::string prefix) const {
+void VarDeclAST::output_global(Ost& outstr, std::string prefix) const {
+	for(auto& i : defs) {
+		i->typ = std::make_unique<TypeAST>(*typ);
+		i->output_global(outstr, prefix);
+	}
+}
+
+void VarDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) const {
 	auto reg_var = new Koopa_val_named_symbol;
 	reg_var->set_id(ident);
-	outstr << prefix << "@" << reg_var->get_id() << " = alloc ";
+	outstr << prefix
+		   << (is_global ? "global " : "")
+		   << "@" << reg_var->get_id() << " = alloc ";
 	typ->output(outstr, "");
-	outstr << "\n";
 	symbol_table.insert({ident, Koopa_val(reg_var)});
 	if(val.has_value()) {
-		val.value()->output(outstr, prefix);
-		Koopa_val last_val = stmt_val.top();
-		stmt_val.pop();
-		last_val.prepare(outstr, prefix);
-		outstr << prefix << "store " << last_val << ", @" << reg_var->get_id() << "\n";
+		if(is_global) {
+			outstr << ", " << val.value()->exp->calc() << "\n";
+		} else {
+			val.value()->output(outstr, prefix);
+			Koopa_val last_val = stmt_val.top();
+			stmt_val.pop();
+			last_val.prepare(outstr, prefix);
+			outstr << "\n";
+			outstr << prefix << "store " << last_val << ", @" << reg_var->get_id() << "\n";
+		}
+	} else {
+		if(is_global) {
+			outstr << ", zeroinit";
+		}
+		outstr << "\n";
 	}
+}
+void VarDefAST::output(Ost& outstr, std::string prefix) const {
+	output_base(outstr, prefix, false);
+}
+
+void VarDefAST::output_global(Ost& outstr, std::string prefix) const {
+	output_base(outstr, prefix, true);
 }
 
 void LValAssignAST::output(Ost& outstr, std::string prefix) const {

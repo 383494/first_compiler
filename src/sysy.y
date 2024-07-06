@@ -45,10 +45,10 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
 %token <str_val> IDENT
 %token <int_val> INT_CONST
 
-%type <ast_val> CompUnit FuncDef FuncType FuncDefParams FuncDefParam FuncCallParams
+%type <ast_val> CompUnit FuncDef FuncDefParams FuncDefParam FuncCallParams
 %type <ast_val> Block BlockItemList BlockItem Stmt 
 %type <ast_val> If
-%type <ast_val> Decl ConstDecl VarDecl BType ConstDef ConstDefList ConstInitVal VarDef VarDefList InitVal LVal
+%type <ast_val> Decl ConstDecl VarDecl Type ConstDef ConstDefList ConstInitVal VarDef VarDefList InitVal LVal
 %type <ast_val> PrimaryExp ConstExp Exp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
 
 // BINARY operators.
@@ -67,42 +67,45 @@ Compile_loader:
 	}
 	;
 
-CompUnit
-	: CompUnit FuncDef {
+CompUnit:
+	{
+		$$ = new CompUnitAST();
+	} | CompUnit Decl {
 		auto ast = (CompUnitAST*)$1;
-		ast->func_def.push_back(cast_ast<FuncDefAST>($2));
+		ast->decls.push_back(cast_ast<DeclAST>($2));
 		$$ = ast;
-	} | FuncDef {
-		auto ast = new CompUnitAST();
-		ast->func_def.push_back(cast_ast<FuncDefAST>($1));
+	} | CompUnit FuncDef {
+		auto ast = (CompUnitAST*)$1;
+		ast->decls.push_back(cast_ast<FuncDefAST>($2));
 		$$ = ast;
 	}
 	;
 
 FuncDef
-	: FuncType IDENT '(' FuncDefParams ')' Block {
+	: Type IDENT '(' FuncDefParams ')' Block {
 		auto ast = new FuncDefAST();
-		ast->func_typ = cast_ast<TypAST>($1);
+		ast->func_typ = cast_ast<TypeAST>($1);
 		ast->ident = *std::unique_ptr<std::string>($2);
 		ast->params = cast_ast<FuncDefParamsAST>($4);
 		ast->block = cast_ast<BlockAST>($6);
 		$$ = ast;
-	} | FuncType IDENT '(' ')' Block {
+	} | Type IDENT '(' ')' Block {
 		auto ast = new FuncDefAST();
-		ast->func_typ = cast_ast<TypAST>($1);
+		ast->func_typ = cast_ast<TypeAST>($1);
 		ast->ident = *std::unique_ptr<std::string>($2);
 		ast->block = cast_ast<BlockAST>($5);
 		$$ = ast;
 	}
 	;
 
-FuncType
+Type
 	: INT {
-		auto ast = new TypAST();
+		auto ast = new TypeAST();
 		ast->typ = "i32";
 		$$ = ast;
 	} | VOID {
-		auto ast = new TypAST();
+		auto ast = new TypeAST();
+		ast->typ = "void";
 		ast->is_void = true;
 		$$ = ast;
 	}
@@ -121,9 +124,9 @@ FuncDefParams:
 	;
 
 FuncDefParam:
-	BType IDENT {
+	Type IDENT {
 		auto ast = new FuncDefParamsAST();
-		ast->params.push_back({cast_ast<BTypeAST>($1), *$2});
+		ast->params.push_back({cast_ast<TypeAST>($1), *$2});
 		$$ = ast;
 	}
 	;
@@ -182,8 +185,8 @@ Decl:
 	};
 
 ConstDecl:
-	CONST BType ConstDefList ';' {
-		((ConstDeclAST*)$3)->typ = cast_ast<BTypeAST>($2);
+	CONST Type ConstDefList ';' {
+		((ConstDeclAST*)$3)->typ = cast_ast<TypeAST>($2);
 		$$ = $3;
 	};
 
@@ -221,9 +224,10 @@ ConstExp:
 	};
 
 VarDecl:
-	BType VarDefList ';' {
+	Type VarDefList ';' {
+	// TODO
 		auto ast = (VarDeclAST*)$2;
-		ast->typ = cast_ast<BTypeAST>($1);
+		ast->typ = cast_ast<TypeAST>($1);
 		$$ = ast;
 	};
 
@@ -254,15 +258,9 @@ InitVal:
 	Exp {
 		auto ast = new InitValAST();
 		ast->exp = cast_ast<ExpAST>($1);
-		$$ = $1;
-	};
-
-
-BType:
-	INT {
-		auto ast = new BTypeAST();
 		$$ = ast;
 	};
+
 
 Stmt:
 	RETURN ';' {

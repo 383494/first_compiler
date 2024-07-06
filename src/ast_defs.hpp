@@ -67,7 +67,6 @@ public:
 	OpAST(Op_type typ) { op = typ; }
 };
 
-class BTypeAST;
 class BinaryOpAST;
 class BlockAST;
 class BlockItemAST;
@@ -92,7 +91,7 @@ class OptionalExpAST;
 class PrimaryExpAST;
 class ReturnAST;
 class StmtAST;
-class TypAST;
+class TypeAST;
 class UnaryExpAST;
 class UnaryOpAST;
 class VarDeclAST;
@@ -104,21 +103,21 @@ class BinaryExpAST;
 
 class CompUnitAST : public BaseAST {
 public:
-	std::list<std::unique_ptr<FuncDefAST>> func_def;
+	std::list<VariantAstPtr<FuncDefAST, DeclAST>> decls;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
 class FuncDefAST : public BaseAST {
 public:
-	std::unique_ptr<TypAST> func_typ;
+	std::unique_ptr<TypeAST> func_typ;
 	std::optional<std::unique_ptr<FuncDefParamsAST>> params;
 	std::string ident;
 	std::unique_ptr<BlockAST> block;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
-// Type of function.
-class TypAST : public BaseAST {
+// Type of function or variable.
+class TypeAST : public BaseAST {
 public:
 	std::string typ;
 	bool is_void;
@@ -216,20 +215,15 @@ class DeclAST : public BaseAST {
 public:
 	VariantAstPtr<ConstDeclAST, VarDeclAST> decl;
 	void output(Ost &outstr, std::string prefix) const override;
+	void output_global(Ost &outstr, std::string prefix) const;
 };
 
 class ConstDeclAST : public BaseAST {
 public:
-	std::unique_ptr<BTypeAST> typ;
+	std::unique_ptr<TypeAST> typ;
 	std::list<std::unique_ptr<ConstDefAST>> defs;
 	void output(Ost &outstr, std::string prefix) const override;
-};
-
-class BTypeAST : public BaseAST {
-public:
-	BTypeAST() = default;
-	BTypeAST(BTypeAST const &) = default;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output_global(Ost &outstr, std::string prefix) const;
 };
 
 class ConstDefAST : public BaseAST {
@@ -262,17 +256,20 @@ public:
 
 class VarDeclAST : public BaseAST {
 public:
-	std::unique_ptr<BTypeAST> typ;
+	std::unique_ptr<TypeAST> typ;
 	std::list<std::unique_ptr<VarDefAST>> defs;
 	void output(Ost &outstr, std::string prefix) const override;
+	void output_global(Ost &outstr, std::string prefix) const;
 };
 
 class VarDefAST : public BaseAST {
 public:
-	std::unique_ptr<BTypeAST> typ;
+	std::unique_ptr<TypeAST> typ;
 	std::string ident;
 	std::optional<std::unique_ptr<InitValAST>> val;
+	void output_base(Ost &outstr, std::string prefix, bool is_global) const;
 	void output(Ost &outstr, std::string prefix) const override;
+	void output_global(Ost &outstr, std::string prefix) const;
 };
 
 class InitValAST : public BaseAST {
@@ -327,7 +324,7 @@ public:
 
 class FuncDefParamsAST : public BaseAST {
 public:
-	std::list<std::pair<std::unique_ptr<BTypeAST>, std::string>> params;
+	std::list<std::pair<std::unique_ptr<TypeAST>, std::string>> params;
 	void output(Ost &outstr, std::string prefix) const override;
 	void output_save(Ost &outstr, std::string prefix) const;
 };
