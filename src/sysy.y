@@ -297,7 +297,7 @@ ConstDef:
 		ast->ident = *$1;
 		for(auto i: *$2){
 			auto exp = (ConstExpAST*)i;
-			ast->dimension.push_back(exp->calc());
+			ast->dimension.push_back(exp->val);
 			delete exp;
 		}
 		delete $2;
@@ -346,6 +346,7 @@ ConstExp:
 	Exp {
 		auto ast = new ConstExpAST();
 		ast->exp = cast_ast<ExpAST>($1);
+		ast->calc();
 		$$ = ast;
 	};
 
@@ -373,7 +374,7 @@ VarDef:
 		ast->ident = *$1;
 		for(auto i: *$2){
 			auto exp = (ConstExpAST*)i;
-			ast->dimension.push_back(exp->calc());
+			ast->dimension.push_back(exp->val);
 			delete exp;
 		}
 		delete $2;
@@ -383,7 +384,7 @@ VarDef:
 		ast->ident = *$1;
 		for(auto i: *$2){
 			auto exp = (ConstExpAST*)i;
-			ast->dimension.push_back(exp->calc());
+			ast->dimension.push_back(exp->val);
 			delete exp;
 		}
 		delete $2;
@@ -504,7 +505,7 @@ LVal:
 		ast->ident = *$1;
 		for(auto i: *$2){
 			auto exp = (ConstExpAST*)i;
-			ast->dimension.push_back(exp->calc());
+			ast->dimension.push_back(exp->val);
 			delete exp;
 		}
 		delete $2;

@@ -1,4 +1,4 @@
 #!/bin/bash
 
-qemu-riscv32-static hello
+qemu-riscv32-static hello.exe
 echo $?

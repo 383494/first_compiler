@@ -244,13 +244,14 @@ public:
 	std::list<int> dimension;
 	void calc();
 	void output(Ost &outstr, std::string prefix) const override;
+	void output_global(Ost &outstr, std::string prefix) const;
 };
 
 class ConstExpAST : public BaseAST {
 public:
 	std::unique_ptr<ExpAST> exp;
-	std::optional<int> val;
-	int calc();
+	int val;
+	void calc();
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -287,8 +288,6 @@ public:
 	std::list<int> dimension;
 	void output(Ost &outstr, std::string prefix) const override;
 	void output_global(Ost &outstr, std::string prefix) const;
-	template<typename T>
-	void assign_to(T, Ost &outstr, std::string prefix) const;
 };
 
 class LValAssignAST : public BaseAST {
