@@ -7,6 +7,7 @@ namespace Ast_Base {
 
 int unnamed_var_cnt = 0;
 int named_var_cnt = 0;
+int ptr_cnt = 0;
 int if_cnt = 0;
 int loop_cnt = 0;
 
@@ -49,7 +50,9 @@ private:
 	int id;
 
 public:
-	Koopa_val_temp_symbol(int x) { id = x; }
+	Koopa_val_temp_symbol(int x) {
+		id = x;
+	}
 	std::string get_str() const override {
 		return std::string("%") + std::to_string(id);
 	}
@@ -62,18 +65,64 @@ private:
 	int cache_id;
 
 public:
-	void set_id(std::string str) {
+	std::list<int> dimension;
+	void set_id(std::string const & str) {
 		id = str + "_" + std::to_string(named_var_cnt);
 		named_var_cnt++;
+	}
+	void set_dim(std::list<int> const & dim) {
+		dimension = dim;
 	}
 	std::string get_id() const { return id; }
 	std::string get_str() const override {
 		return std::string("%") + std::to_string(cache_id);
 	}
 	void prepare(Ost& outstr, std::string prefix) override {
-		outstr << prefix << "%" << unnamed_var_cnt << " = load @" << id << '\n';
 		cache_id = unnamed_var_cnt;
 		unnamed_var_cnt++;
+		if(dimension.empty()) {
+			outstr << prefix << "%" << cache_id << " = load @" << id << '\n';
+			return;
+		}
+		int last_ptr = -1, now_ptr = -1;
+		for(int i : dimension) {
+			now_ptr = ptr_cnt;
+			ptr_cnt++;
+			outstr << prefix << "%ptr_" << now_ptr << " = getelemptr ";
+			if(last_ptr == -1) {
+				outstr << "@" << id;
+			} else {
+				outstr << "%ptr_" << last_ptr;
+			}
+			outstr << ", " << i << "\n";
+			last_ptr = now_ptr;
+		}
+		outstr << prefix << "%" << cache_id << " = load %ptr_" << last_ptr << "\n";
+	}
+	Koopa_val_named_symbol* copy() {
+		auto ret = new Koopa_val_named_symbol;
+		*ret = *this;
+		return ret;
+	}
+	void store(std::string&& from, Ost& outstr, std::string prefix) {
+		if(dimension.empty()) {
+			outstr << prefix << "store " << from << ", @" << id << "\n";
+			return;
+		}
+		int last_ptr = -1, now_ptr = -1;
+		for(int i : dimension) {
+			now_ptr = ptr_cnt;
+			ptr_cnt++;
+			outstr << prefix << "%ptr_" << now_ptr << " = getelemptr ";
+			if(last_ptr == -1) {
+				outstr << "@" << id;
+			} else {
+				outstr << "%ptr_" << last_ptr;
+			}
+			outstr << ", " << i << "\n";
+			last_ptr = now_ptr;
+		}
+		outstr << prefix << "store " << from << ", %ptr_" << last_ptr << "\n";
 	}
 	Koopa_value_type val_type() const override { return KOOPA_VALUE_TYPE_NAMED; }
 };
@@ -107,6 +156,7 @@ public:
 	Koopa_val(Koopa_val_base* obj) {
 		val = std::shared_ptr<Koopa_val_base>(obj);
 	}
+	Koopa_val_base* get_ptr() const { return val.get(); }
 	int get_im_val() const {
 		assert(val_type() == KOOPA_VALUE_TYPE_IMMEDIATE);
 		return std::static_pointer_cast<Koopa_val_im>(val)->get_im_val();
@@ -122,6 +172,11 @@ public:
 	Koopa_value_type val_type() const { return val->val_type(); }
 	std::string get_str() const {
 		return val->get_str();
+	}
+	void store(std::string&& from, Ost& outstr, std::string prefix) {
+		assert(val_type() == KOOPA_VALUE_TYPE_NAMED);
+		std::static_pointer_cast<Koopa_val_named_symbol>(val)->store(
+			std::move(from), outstr, prefix);
 	}
 	void prepare(Ost& outstr, std::string prefix) {
 		return val->prepare(outstr, prefix);
@@ -583,24 +638,146 @@ void ConstDeclAST::output_global(Ost& outstr, std::string prefix) const {
 	output(outstr, prefix);
 }
 
-void ConstDefAST::output(Ost& outstr, std::string prefix) const {
-	val->calc();
-	symbol_table.insert({ident, new Koopa_val_im(std::get<int>(val->val.value()))});
+void ConstDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) const {
+	if(dimension.empty()) {
+		auto& exp = std::get<0>(val->exp);
+		symbol_table.insert({ident, new Koopa_val_im(exp->calc())});
+	} else {
+		auto koopa_val = new Koopa_val_named_symbol();
+		// no set dimension
+		koopa_val->set_id(ident);
+		outstr << prefix
+			   << (is_global ? "global " : "")
+			   << "@" << koopa_val->get_id() << " = alloc ";
+		for(int i = dimension.size(); i-- > 0;) {
+			outstr << "[";
+		}
+		outstr << "i32";
+		for(auto i = dimension.rbegin(); i != dimension.rend(); i++) {
+			outstr << ", " << *i << "]";
+		}
+		if(is_global) {
+			outstr << ", ";
+			val->output(outstr, "");
+			outstr << "\n";
+		} else {
+			outstr << "\n";
+			outstr << prefix << "store ";
+			val->output(outstr, "");
+			outstr << ", @" << koopa_val->get_id() << "\n";
+		}
+		symbol_table.insert({ident, koopa_val});
+		// symbol_table.insert({ident, new Koopa_val_im(exp->calc())});
+	}
 	// symbol_table[ident] = new Koopa_val_im(std::get<int>(val->val.value()));
 	// symbol_const.insert({ident, std::get<int>(val->val.value())});
 	// symbol_const[ident] = std::get<int>(val->val.value());
 }
 
-void ConstInitValAST::output(Ost& outstr, std::string prefix) const {
-	return;
+void ConstDefAST::output(Ost& outstr, std::string prefix) const {
+	output_base(outstr, prefix, false);
 }
 
-void ConstInitValAST::calc() {
-	val = exp->calc();
+void ConstDefAST::output_global(Ost& outstr, std::string prefix) const {
+	output_base(outstr, prefix, true);
+}
+
+void ConstInitValAST::output(Ost& outstr, std::string prefix) const {
+	if(is_zero) {
+		outstr << prefix << "zeroinit";
+	} else if(exp.index() == 0) {
+		outstr << prefix << std::get<0>(exp)->calc();
+	} else {
+		outstr << prefix << "{";
+		bool is_first_param = true;
+		for(auto& i : std::get<1>(exp)) {
+			if(is_first_param) {
+				is_first_param = false;
+			} else {
+				outstr << ", ";
+			}
+			i->output(outstr, prefix);
+		}
+		outstr << prefix << "}";
+	}
+}
+
+void InitValAST::output_global(Ost& outstr, std::string prefix) const {
+	if(is_zero) {
+		outstr << prefix << "zeroinit";
+	} else if(exp.index() == 0) {
+		outstr << prefix << std::get<0>(exp)->calc();
+	} else {
+		outstr << prefix << "{";
+		bool is_first_param = true;
+		for(auto& i : std::get<1>(exp)) {
+			if(is_first_param) {
+				is_first_param = false;
+			} else {
+				outstr << ", ";
+			}
+			i->output_global(outstr, prefix);
+		}
+		outstr << prefix << "}";
+	}
+}
+
+template<>
+void InitValAST::assign_to(Koopa_val_named_symbol* val, Ost& outstr, std::string prefix) const {
+	if(is_zero) {
+		if(dimension.empty()) {
+			val->store("0", outstr, prefix);
+			return;
+		}
+		for(int i = dimension.size(); i-- > 0;) {
+			val->dimension.push_back(0);
+		}
+		for(;;) {
+			val->store("0", outstr, prefix);
+			auto i = dimension.rbegin();
+			auto j = val->dimension.rbegin();
+			++*j;
+			while(*i == *j) {
+				*j = 0;
+				i++;
+				j++;
+				if(i == dimension.rend()) {
+					break;
+				}
+				++*j;
+			}
+			if(i == dimension.rend()) {
+				break;
+			}
+		}
+		for(int i = dimension.size(); i-- > 0;) {
+			val->dimension.pop_back();
+		}
+		return;
+	}
+	if(exp.index() == 0) {
+		std::get<0>(exp)->output(outstr, prefix);
+		Koopa_val las = stmt_val.top();
+		stmt_val.pop();
+		las.prepare(outstr, prefix);
+		val->store(las.get_str(), outstr, prefix);
+		return;
+	}
+	val->dimension.push_back(0);
+	for(auto& i : std::get<1>(exp)) {
+		if(dimension.size() > 1) {
+			i->dimension = std::list<int>(++dimension.begin(), dimension.end());
+		}
+		i->assign_to(val, outstr, prefix);
+		val->dimension.back()++;
+	}
+	val->dimension.pop_back();
 }
 
 void InitValAST::output(Ost& outstr, std::string prefix) const {
-	exp->output(outstr, prefix);
+	// use assign_to instead.
+	assert(0);
+	return;
 }
 
 void LValAST::output(Ost& outstr, std::string prefix) const {
@@ -608,7 +785,9 @@ void LValAST::output(Ost& outstr, std::string prefix) const {
 		std::cerr << "What is " << ident << "???\n";
 		throw 114514;
 	}
-	stmt_val.push(symbol_table[ident]);
+	auto koopa_val = ((Koopa_val_named_symbol*)(symbol_table[ident].get_ptr()))->copy();
+	koopa_val->set_dim(dimension);
+	stmt_val.push(Koopa_val(koopa_val));
 }
 
 void ConstExpAST::output(Ost& outstr, std::string prefix) const {
@@ -616,7 +795,11 @@ void ConstExpAST::output(Ost& outstr, std::string prefix) const {
 }
 
 int ConstExpAST::calc() {
-	return exp->calc();
+	if(val.has_value()) {
+		return val.value();
+	}
+	val = exp->calc();
+	return val.value();
 }
 
 void VarDeclAST::output(Ost& outstr, std::string prefix) const {
@@ -639,18 +822,25 @@ void VarDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) con
 	outstr << prefix
 		   << (is_global ? "global " : "")
 		   << "@" << reg_var->get_id() << " = alloc ";
+	for(int i = dimension.size(); i-- > 0;) {
+		outstr << "[";
+	}
 	typ->output(outstr, "");
-	symbol_table.insert({ident, Koopa_val(reg_var)});
+	for(auto i = dimension.rbegin(); i != dimension.rend(); i++) {
+		outstr << ", " << *i << "]";
+	}
 	if(val.has_value()) {
 		if(is_global) {
-			outstr << ", " << val.value()->exp->calc() << "\n";
+			outstr << ", ";
+			val.value()->output_global(outstr, prefix);
+			outstr << "\n";
 		} else {
 			outstr << "\n";
-			val.value()->output(outstr, prefix);
-			Koopa_val last_val = stmt_val.top();
-			stmt_val.pop();
-			last_val.prepare(outstr, prefix);
-			outstr << prefix << "store " << last_val << ", @" << reg_var->get_id() << "\n";
+			val.value()->assign_to(reg_var, outstr, prefix);
+			// Koopa_val last_val = stmt_val.top();
+			// stmt_val.pop();
+			// last_val.prepare(outstr, prefix);
+			// reg_var->store(last_val.get_str(), outstr, prefix);
 		}
 	} else {
 		if(is_global) {
@@ -658,6 +848,7 @@ void VarDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) con
 		}
 		outstr << "\n";
 	}
+	symbol_table.insert({ident, Koopa_val(reg_var)});
 }
 void VarDefAST::output(Ost& outstr, std::string prefix) const {
 	output_base(outstr, prefix, false);
@@ -676,7 +867,8 @@ void LValAssignAST::output(Ost& outstr, std::string prefix) const {
 	rhs = stmt_val.top();
 	stmt_val.pop();
 	rhs.prepare(outstr, prefix);
-	outstr << prefix << "store " << rhs << ", @" << lhs.get_named_name() << '\n';
+	lhs.store(rhs.get_str(), outstr, prefix);
+	// outstr << prefix << "store " << rhs << ", @" << lhs.get_named_name() << '\n';
 }
 
 void ReturnAST::output(Ost& outstr, std::string prefix) const {
@@ -796,8 +988,11 @@ void FuncDefParamsAST::output_save(Ost& outstr, std::string prefix) const {
 		val->set_id(i.second);
 		outstr << prefix << "@" << val->get_id() << " = alloc ";
 		i.first->output(outstr, "");
-		outstr << "\n"
-			   << prefix << "store @" << i.second << "_param, @" << val->get_id() << "\n";
+		outstr << "\n";
+		val->store(std::string("@") + i.second + std::string("_param"),
+				   outstr,
+				   prefix);
+		// << prefix << "store @" << i.second << "_param, @" << val->get_id() << "\n";
 		symbol_table.insert({i.second, val});
 	}
 }

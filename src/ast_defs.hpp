@@ -230,14 +230,18 @@ public:
 class ConstDefAST : public BaseAST {
 public:
 	std::string ident;
+	std::list<int> dimension;   // [x][y][z] -> (x, y, z)
 	std::unique_ptr<ConstInitValAST> val;
+	void output_base(Ost &outstr, std::string prefix, bool is_global) const;
 	void output(Ost &outstr, std::string prefix) const override;
+	void output_global(Ost &outstr, std::string prefix) const;
 };
 
 class ConstInitValAST : public BaseAST {
 public:
-	std::unique_ptr<ConstExpAST> exp;
-	std::optional<std::variant<int>> val;   // cached
+	std::variant<std::unique_ptr<ConstExpAST>, std::list<std::unique_ptr<ConstInitValAST>>> exp;
+	bool is_zero;   // must be list
+	std::list<int> dimension;
 	void calc();
 	void output(Ost &outstr, std::string prefix) const override;
 };
@@ -245,6 +249,7 @@ public:
 class ConstExpAST : public BaseAST {
 public:
 	std::unique_ptr<ExpAST> exp;
+	std::optional<int> val;
 	int calc();
 	void output(Ost &outstr, std::string prefix) const override;
 };
@@ -252,6 +257,7 @@ public:
 class LValAST : public BaseAST {
 public:
 	std::string ident;
+	std::list<int> dimension;
 	void output(Ost &outstr, std::string prefix) const override;
 };
 
@@ -267,6 +273,7 @@ class VarDefAST : public BaseAST {
 public:
 	std::unique_ptr<TypeAST> typ;
 	std::string ident;
+	std::list<int> dimension;
 	std::optional<std::unique_ptr<InitValAST>> val;
 	void output_base(Ost &outstr, std::string prefix, bool is_global) const;
 	void output(Ost &outstr, std::string prefix) const override;
@@ -275,8 +282,13 @@ public:
 
 class InitValAST : public BaseAST {
 public:
-	std::unique_ptr<ExpAST> exp;
+	std::variant<std::unique_ptr<ExpAST>, std::list<std::unique_ptr<InitValAST>>> exp;
+	bool is_zero;   // must be list
+	std::list<int> dimension;
 	void output(Ost &outstr, std::string prefix) const override;
+	void output_global(Ost &outstr, std::string prefix) const;
+	template<typename T>
+	void assign_to(T, Ost &outstr, std::string prefix) const;
 };
 
 class LValAssignAST : public BaseAST {
