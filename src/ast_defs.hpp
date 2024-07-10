@@ -58,7 +58,7 @@ enum Op_type {
 class BaseAST {
 public:
 	virtual ~BaseAST() = default;
-	virtual void output(Ost &, std::string) const = 0;
+	virtual void output(Ost &, std::string) = 0;
 };
 
 class OpAST : public BaseAST {
@@ -82,11 +82,12 @@ class ExpAST;
 class FuncCallAST;
 class FuncCallParamsAST;
 class FuncDefAST;
+class FuncDefParamAST;
 class FuncDefParamsAST;
 class IfAST;
 class InitValAST;
-class LValAST;
 class LValAssignAST;
+class LValAST;
 class OptionalExpAST;
 class PrimaryExpAST;
 class ReturnAST;
@@ -101,10 +102,18 @@ class WhileAST;
 template<int>
 class BinaryExpAST;
 
+class Dimension_list {
+public:
+	std::list<int> dimension;
+	std::unique_ptr<std::list<std::unique_ptr<ExpAST>>> dim_list;
+	void prepare_dim();
+};
+
+
 class CompUnitAST : public BaseAST {
 public:
 	std::list<VariantAstPtr<FuncDefAST, DeclAST>> decls;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class FuncDefAST : public BaseAST {
@@ -113,7 +122,7 @@ public:
 	std::optional<std::unique_ptr<FuncDefParamsAST>> params;
 	std::string ident;
 	std::unique_ptr<BlockAST> block;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 // Type of function or variable.
@@ -121,61 +130,61 @@ class TypeAST : public BaseAST {
 public:
 	std::string typ;
 	bool is_void;
-	void output(Ost &outstr, std::string) const override;
+	void output(Ost &outstr, std::string) override;
 };
 
 class BlockAST : public BaseAST {
 public:
 	std::list<std::unique_ptr<BlockItemAST>> items;
 	void output_base(Ost &outstr, std::string prefix, bool update_symbol_table) const;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class BlockItemAST : public BaseAST {
 public:
 	VariantAstPtr<DeclAST, StmtAST> item;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class StmtAST : public BaseAST {
 public:
 	VariantAstPtr<ReturnAST, LValAssignAST, OptionalExpAST, BlockAST, IfAST, WhileAST, BreakAST, ContinueAST> val;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class OptionalExpAST : public BaseAST {
 public:
 	std::optional<std::unique_ptr<ExpAST>> exp;
 	bool has_value() const;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class ExpAST : public BaseAST {
 public:
 	std::unique_ptr<BinaryExpAST<BINARY_EXP_MAX_LEVEL>> binary_exp;
 	int calc();
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class UnaryExpAST : public BaseAST {
 public:
 	std::optional<std::unique_ptr<UnaryOpAST>> unary_op;
 	VariantAstPtr<UnaryExpAST, PrimaryExpAST> unary_exp;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 	int calc();
 };
 
 class PrimaryExpAST : public BaseAST {
 public:
 	std::variant<std::unique_ptr<ExpAST>, std::unique_ptr<LValAST>, int> inside_exp;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 	int calc();
 };
 
 class UnaryOpAST : public OpAST {
 public:
 	using OpAST::OpAST;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 	int calc(int x);
 };
 
@@ -183,7 +192,7 @@ class BinaryOpAST : public OpAST {
 public:
 	using OpAST::OpAST;
 	bool is_logic_op();
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 	int calc(int lhs, int rhs);
 };
 
@@ -193,7 +202,7 @@ public:
 	std::optional<std::unique_ptr<Now_Level_Type>> now_level;
 	std::optional<std::unique_ptr<BinaryOpAST>> binary_op;
 	std::unique_ptr<Nxt_Level_Type> nxt_level;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 	int calc();
 };
 
@@ -215,7 +224,7 @@ using LOrExpAST = BinaryExpAST<5>;	template class BinaryExpAST<5>;
 class DeclAST : public BaseAST {
 public:
 	VariantAstPtr<ConstDeclAST, VarDeclAST> decl;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 	void output_global(Ost &outstr, std::string prefix) const;
 };
 
@@ -223,84 +232,77 @@ class ConstDeclAST : public BaseAST {
 public:
 	std::unique_ptr<TypeAST> typ;
 	std::list<std::unique_ptr<ConstDefAST>> defs;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 	void output_global(Ost &outstr, std::string prefix) const;
 };
 
-class ConstDefAST : public BaseAST {
+class ConstDefAST : public BaseAST, public Dimension_list {
 public:
 	std::string ident;
-	std::list<int> dimension;   // [x][y][z] -> (x, y, z)
 	std::unique_ptr<ConstInitValAST> val;
-	void output_base(Ost &outstr, std::string prefix, bool is_global) const;
-	void output(Ost &outstr, std::string prefix) const override;
-	void output_global(Ost &outstr, std::string prefix) const;
+	void output_base(Ost &outstr, std::string prefix, bool is_global);
+	void output(Ost &outstr, std::string prefix) override;
+	void output_global(Ost &outstr, std::string prefix);
 };
 
-class ConstInitValAST : public BaseAST {
+class ConstInitValAST : public BaseAST, public Dimension_list {
 public:
 	std::variant<std::unique_ptr<ConstExpAST>, std::list<std::unique_ptr<ConstInitValAST>>> exp;
+	bool filled_zero = false;
 	bool is_zero;   // must be list
-	std::list<int> dimension;
-	void calc();
-	void output(Ost &outstr, std::string prefix) const override;
-	void output_global(Ost &outstr, std::string prefix) const;
+	void output(Ost &outstr, std::string prefix) override;
+	void output_global(Ost &outstr, std::string prefix);
 };
 
-class ConstExpAST : public BaseAST {
+class ConstExpAST : public ExpAST {
 public:
-	std::unique_ptr<ExpAST> exp;
-	int val;
-	void calc();
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
-class LValAST : public BaseAST {
+class LValAST : public BaseAST, public Dimension_list {
 public:
 	std::string ident;
-	std::list<int> dimension;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class VarDeclAST : public BaseAST {
 public:
 	std::unique_ptr<TypeAST> typ;
 	std::list<std::unique_ptr<VarDefAST>> defs;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 	void output_global(Ost &outstr, std::string prefix) const;
 };
 
-class VarDefAST : public BaseAST {
+class VarDefAST : public BaseAST, public Dimension_list {
 public:
 	std::unique_ptr<TypeAST> typ;
 	std::string ident;
-	std::list<int> dimension;
 	std::optional<std::unique_ptr<InitValAST>> val;
-	void output_base(Ost &outstr, std::string prefix, bool is_global) const;
-	void output(Ost &outstr, std::string prefix) const override;
-	void output_global(Ost &outstr, std::string prefix) const;
+	void output_base(Ost &outstr, std::string prefix, bool is_global);
+	void output(Ost &outstr, std::string prefix) override;
+	void output_global(Ost &outstr, std::string prefix);
 };
 
-class InitValAST : public BaseAST {
+class InitValAST : public BaseAST, public Dimension_list {
 public:
 	std::variant<std::unique_ptr<ExpAST>, std::list<std::unique_ptr<InitValAST>>> exp;
+	bool filled_zero = false;
 	bool is_zero;   // must be list
-	std::list<int> dimension;
-	void output(Ost &outstr, std::string prefix) const override;
-	void output_global(Ost &outstr, std::string prefix) const;
+	void output(Ost &outstr, std::string prefix) override;
+	void output_global(Ost &outstr, std::string prefix);
 };
 
 class LValAssignAST : public BaseAST {
 public:
 	std::unique_ptr<LValAST> lval;
 	std::unique_ptr<ExpAST> exp;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class ReturnAST : public BaseAST {
 public:
 	std::unique_ptr<OptionalExpAST> exp;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 // else is optional
@@ -314,45 +316,54 @@ public:
 	std::string get_then_str() const;
 	std::string get_else_str() const;
 	std::string get_end_str() const;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class WhileAST : public BaseAST {
 public:
 	std::unique_ptr<ExpAST> cond;
 	std::unique_ptr<StmtAST> stmt;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class BreakAST : public BaseAST {
 public:
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class ContinueAST : public BaseAST {
 public:
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class FuncDefParamsAST : public BaseAST {
 public:
-	std::list<std::pair<std::unique_ptr<TypeAST>, std::string>> params;
-	void output(Ost &outstr, std::string prefix) const override;
+	std::list<std::unique_ptr<FuncDefParamAST>> params;
+	void output(Ost &outstr, std::string prefix) override;
 	void output_save(Ost &outstr, std::string prefix) const;
+};
+
+class FuncDefParamAST : public BaseAST, public Dimension_list {
+public:
+	std::unique_ptr<TypeAST> typ;
+	std::string id;
+	bool is_ptr;
+	void output(Ost &outstr, std::string prefix) override;
+	void output_save(Ost &outstr, std::string prefix);
 };
 
 class FuncCallAST : public BaseAST {
 public:
 	std::string func;
 	std::unique_ptr<FuncCallParamsAST> params;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 class FuncCallParamsAST : public BaseAST {
 public:
 	std::list<std::unique_ptr<ExpAST>> params;
 	int get_param_cnt() const;
-	void output(Ost &outstr, std::string prefix) const override;
+	void output(Ost &outstr, std::string prefix) override;
 };
 
 }   // namespace Ast_Defs

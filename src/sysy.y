@@ -20,87 +20,9 @@ std::unique_ptr<T> cast_ast(BaseAST *p){
    return std::unique_ptr<T>((T*)p);
 }
 
-template<typename Me_type, typename Exp_type>
-void fill_zero_base(std::unique_ptr<Me_type> &me, std::list<int> const & dim) {
-	if(me->exp.index() == 0 || dim.empty()) {
-		return;
-	}
-	me->dimension = dim;
-	if(me->is_zero) {
-		return;
-	}
-	std::list<std::unique_ptr<Me_type>> nxt_exp;
-	int done = 0;
-	std::list<int> sum_size = dim;
-	sum_size.push_back(1);
-	for(auto i = sum_size.rbegin(), j = i;; i = j) {
-		j++;
-		if(j == sum_size.rend()) {
-			break;
-		}
-		*j *= *i;
-	}
-	for(auto& i : std::get<1>(me->exp)) {
-		if(i->exp.index() == 0) {
-			decltype(nxt_exp)* j = &nxt_exp;
-			auto k = ++sum_size.begin();
-			while(done % *k != 0) {
-				j = &std::get<1>(j->back()->exp);
-				k++;
-			}
-			while(k != --sum_size.end()) {
-				auto ast = std::make_unique<Me_type>();
-				ast->exp = decltype(nxt_exp)();
-				j->push_back(std::move(ast));
-				j = &std::get<1>(j->back()->exp);
-				k++;
-			}
-			j->push_back(std::move(i));
-			done++;
-		} else {
-			if(done % *-- --sum_size.end() != 0) {
-				std::cerr << "invalid array\n";
-				throw 114514;
-			}
-			decltype(nxt_exp)* j = &nxt_exp;
-			auto k = ++sum_size.begin();
-			auto l = ++dim.begin();
-			while(done % *k != 0) {
-				j = &std::get<1>(j->back()->exp);
-				k++;
-				l++;
-			}
-			j->push_back(std::make_unique<Me_type>());
-			j->back()->is_zero = false;
-			std::swap(j->back()->exp, i->exp);
-			fill_zero_base<Me_type, Exp_type>(j->back(), std::list<int>(l, dim.end()));
-			done += *k;
-		}
-	}
-	decltype(nxt_exp)* i = &nxt_exp;
-	std::stack<decltype(i)> to_visit;
-	to_visit.push(i);
-	auto j = dim.begin();
-	while(j != --dim.end() && !i->back()->is_zero) {
-		i = &std::get<1>(i->back()->exp);
-		to_visit.push(i);
-		j++;
-	}
-	do {
-		i = to_visit.top();
-		for(int k = i->size(); k < *j; k++) {
-			i->push_back(std::make_unique<Me_type>());
-			i->back()->is_zero = true;
-			std::copy(j, dim.end(), i->back()->dimension.begin());
-		}
-		to_visit.pop();
-		j--;
-	} while(!to_visit.empty());
-	me->exp = std::move(nxt_exp);
-}
 
-#define fill_zero_varinit fill_zero_base<InitValAST, ExpAST>
-#define fill_zero_constinit fill_zero_base<ConstInitValAST, ConstExpAST>
+// #define fill_zero_varinit fill_zero_base<InitValAST, ExpAST>
+// #define fill_zero_constinit fill_zero_base<ConstInitValAST, ConstExpAST>
 
 %}
 
@@ -204,19 +126,32 @@ Type:
 FuncDefParams:
 	FuncDefParams ',' FuncDefParam {
 		auto ast = (FuncDefParamsAST*)$1;
-		auto param = (FuncDefParamsAST*)$3;
-		ast->params.splice(ast->params.end(), param->params);
-		delete param;
+		ast->params.push_back(cast_ast<FuncDefParamAST>($3));
 		$$ = ast;
 	} | FuncDefParam {
-		$$ = $1;
+		auto ast = new FuncDefParamsAST();
+		ast->params.push_back(cast_ast<FuncDefParamAST>($1));
+		$$ = ast;
 	}
 	;
 
 FuncDefParam:
 	Type IDENT {
-		auto ast = new FuncDefParamsAST();
-		ast->params.push_back({cast_ast<TypeAST>($1), *$2});
+		auto ast = new FuncDefParamAST();
+		ast->typ = cast_ast<TypeAST>($1);
+		ast->id = *$2;
+		ast->is_ptr = false;
+		$$ = ast;
+	} | Type IDENT '[' ']' ArrayDimension {
+		auto ast = new FuncDefParamAST();
+		ast->typ = cast_ast<TypeAST>($1);
+		ast->id = *$2;
+		ast->is_ptr = true;
+		ast->dim_list = std::make_unique<std::list<std::unique_ptr<ExpAST>>>();
+		for(auto &i: *$5){
+			ast->dim_list->push_back(cast_ast<ExpAST>(i));
+		}
+		delete $5;
 		$$ = ast;
 	}
 	;
@@ -295,14 +230,12 @@ ConstDef:
 	IDENT ArrayDimension '=' ConstInitVal {
 		auto ast = new ConstDefAST();
 		ast->ident = *$1;
+		ast->dim_list = std::make_unique<std::list<std::unique_ptr<ExpAST>>>();
 		for(auto i: *$2){
-			auto exp = (ConstExpAST*)i;
-			ast->dimension.push_back(exp->val);
-			delete exp;
+			ast->dim_list->push_back(cast_ast<ExpAST>(i));
 		}
 		delete $2;
 		ast->val = cast_ast<ConstInitValAST>($4);
-		fill_zero_constinit(ast->val, ast->dimension);
 		$$ = ast;
 	}
 	;
@@ -345,8 +278,9 @@ ConstInitValList:
 ConstExp:
 	Exp {
 		auto ast = new ConstExpAST();
-		ast->exp = cast_ast<ExpAST>($1);
-		ast->calc();
+		auto exp = (ExpAST*)$1;
+		ast->binary_exp = std::move(exp->binary_exp);
+		delete $1;
 		$$ = ast;
 	};
 
@@ -372,24 +306,21 @@ VarDef:
 	IDENT ArrayDimension {
 		auto ast = new VarDefAST();
 		ast->ident = *$1;
+		ast->dim_list = std::make_unique<std::list<std::unique_ptr<ExpAST>>>();
 		for(auto i: *$2){
-			auto exp = (ConstExpAST*)i;
-			ast->dimension.push_back(exp->val);
-			delete exp;
+			ast->dim_list->push_back(cast_ast<ExpAST>(i));
 		}
 		delete $2;
 		$$ = ast;
 	} | IDENT ArrayDimension '=' InitVal {
 		auto ast = new VarDefAST();
 		ast->ident = *$1;
+		ast->dim_list = std::make_unique<std::list<std::unique_ptr<ExpAST>>>();
 		for(auto i: *$2){
-			auto exp = (ConstExpAST*)i;
-			ast->dimension.push_back(exp->val);
-			delete exp;
+			ast->dim_list->push_back(cast_ast<ExpAST>(i));
 		}
 		delete $2;
 		ast->val = cast_ast<InitValAST>($4);
-		fill_zero_varinit(ast->val.value(), ast->dimension);
 		$$ = ast;
 	};
 
@@ -503,10 +434,9 @@ LVal:
 	IDENT ArrayDimension {
 		auto ast = new LValAST();
 		ast->ident = *$1;
+		ast->dim_list = std::make_unique<std::list<std::unique_ptr<ExpAST>>>();
 		for(auto i: *$2){
-			auto exp = (ConstExpAST*)i;
-			ast->dimension.push_back(exp->val);
-			delete exp;
+			ast->dim_list->push_back(cast_ast<ExpAST>(i));
 		}
 		delete $2;
 		$$ = ast;
@@ -681,7 +611,7 @@ Number: INT_CONST;
 ArrayDimension:
 	{
 		$$ = new std::list<BaseAST*>();
-	} | ArrayDimension '[' ConstExp ']' {
+	} | ArrayDimension '[' Exp ']' {
 		$1->push_back($3);
 		$$ = $1;
 	}

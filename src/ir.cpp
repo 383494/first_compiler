@@ -32,6 +32,7 @@ public:
 	virtual void load_to_reg(std::string reg, Outp &outstr) const = 0;
 	virtual void load_addr_to_reg(std::string reg, Outp &outstr) const { assert(0); }
 	virtual void load_ptr_to_reg(std::string reg, Outp &outstr) const { access_ptr_via_reg(reg, true, outstr); }
+	virtual void load_real_to_reg(std::string reg, Outp &outstr) const { load_to_reg(reg, outstr); }
 	virtual void assign_ptr_from_reg(std::string reg, Outp &outstr) const { access_ptr_via_reg(reg, false, outstr); }
 	virtual void assign_from_reg(std::string reg, Outp &outstr) const = 0;
 	virtual void assign_addr_from_reg(std::string reg, Outp &outstr) const { assert(0); }
@@ -115,6 +116,9 @@ public:
 	void load_addr_to_reg(std::string reg, Outp &outstr) const override {
 		outstr << "lw " << reg << ", " << offset << "(sp)\n";
 	}
+	void load_real_to_reg(std::string reg, Outp &outstr) const override {
+		load_addr_to_reg(reg, outstr);
+	}
 	void assign_from_reg(std::string reg, Outp &outstr) const override {
 		std::string tmp_reg = (reg == "t0" ? "t1" : "t0");
 		load_addr_to_reg(tmp_reg, outstr);
@@ -176,7 +180,7 @@ int get_function_stack_mem(const koopa_raw_value_t &val) {
 	if(val->ty->tag == KOOPA_RTT_UNIT) {
 		return 0;
 	}
-	if(val->kind.tag == KOOPA_RVT_GET_ELEM_PTR) {
+	if(val->kind.tag == KOOPA_RVT_GET_ELEM_PTR || val->kind.tag == KOOPA_RVT_GET_PTR) {
 		valmp[(void *)val] = std::make_shared<Asm_val_localptr>(Global_State::offset_cnt);
 	} else {
 		valmp[(void *)val] = std::make_shared<Asm_val_localvar>(Global_State::offset_cnt);
@@ -384,7 +388,7 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 		for(int i = 0; i < args.len; i++) {
 			dfs_ir((koopa_raw_value_t)args.buffer[i], outstr);
 			auto asm_val = valmp[(void *)args.buffer[i]];
-			asm_val->load_to_reg("t0", outstr);
+			asm_val->load_real_to_reg("t0", outstr);
 			if(i < 8) {
 				outstr << "mv a" << i << ", t0\n";
 			} else {
@@ -413,6 +417,19 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 		dfs_ir(kind.data.get_elem_ptr.src, outstr);
 		dfs_ir(kind.data.get_elem_ptr.index, outstr);
 		valmp[(void *)kind.data.get_elem_ptr.src]->load_addr_to_reg("t0", outstr);
+		valmp[(void *)kind.data.get_elem_ptr.index]->load_to_reg("t1", outstr);
+		outstr << "li t2, "
+			   << get_array_size(kind.data.get_elem_ptr.src) /
+					  get_array_len(kind.data.get_elem_ptr.src)
+			   << "\n";
+		outstr << "mul t1, t1, t2\n"
+			   << "add t0, t0, t1\n";
+		valmp[(void *)val]->assign_addr_from_reg("t0", outstr);
+		break;
+	case KOOPA_RVT_GET_PTR:
+		dfs_ir(kind.data.get_elem_ptr.src, outstr);
+		dfs_ir(kind.data.get_elem_ptr.index, outstr);
+		valmp[(void *)kind.data.get_elem_ptr.src]->load_to_reg("t0", outstr);
 		valmp[(void *)kind.data.get_elem_ptr.index]->load_to_reg("t1", outstr);
 		outstr << "li t2, "
 			   << get_array_size(kind.data.get_elem_ptr.src) /

@@ -22,6 +22,7 @@ enum Koopa_value_type {
 	KOOPA_VALUE_TYPE_NAMED,
 	KOOPA_VALUE_TYPE_GLOBAL_FUNCTION,
 	KOOPA_VALUE_TYPE_GLOBAL_NAMED,
+	// KOOPA_VALUE_TYPE_PTR,
 };
 
 class Koopa_val_base {
@@ -63,67 +64,37 @@ class Koopa_val_named_symbol : public Koopa_val_base {
 private:
 	std::string id;
 	int cache_id;
+	int max_dep;   // max size of dimension
+	bool is_ptr;
 
 public:
-	std::list<int> dimension;
+	std::list<std::variant<int, ExpAST*>> dimension;
 	void set_id(std::string const & str) {
 		id = str + "_" + std::to_string(named_var_cnt);
 		named_var_cnt++;
 	}
+	// dim.size() != max_dep
 	void set_dim(std::list<int> const & dim) {
-		dimension = dim;
+		for(int i : dim) {
+			dimension.push_back(i);
+		}
 	}
+	void set_dim(std::list<std::unique_ptr<ExpAST>> const & dim) {
+		for(auto& i : dim) {
+			dimension.push_back(i.get());
+		}
+	}
+	void set_ptr(bool input_is_ptr) { is_ptr = input_is_ptr; }
+	void set_dep(int x) { max_dep = x; }
 	std::string get_id() const { return id; }
-	std::string get_str() const override {
-		return std::string("%") + std::to_string(cache_id);
-	}
-	void prepare(Ost& outstr, std::string prefix) override {
-		cache_id = unnamed_var_cnt;
-		unnamed_var_cnt++;
-		if(dimension.empty()) {
-			outstr << prefix << "%" << cache_id << " = load @" << id << '\n';
-			return;
-		}
-		int last_ptr = -1, now_ptr = -1;
-		for(int i : dimension) {
-			now_ptr = ptr_cnt;
-			ptr_cnt++;
-			outstr << prefix << "%ptr_" << now_ptr << " = getelemptr ";
-			if(last_ptr == -1) {
-				outstr << "@" << id;
-			} else {
-				outstr << "%ptr_" << last_ptr;
-			}
-			outstr << ", " << i << "\n";
-			last_ptr = now_ptr;
-		}
-		outstr << prefix << "%" << cache_id << " = load %ptr_" << last_ptr << "\n";
-	}
+	std::string get_str() const override { return std::string("%") + std::to_string(cache_id); }
+	void prepare(Ost& outstr, std::string prefix) override;
 	Koopa_val_named_symbol* copy() {
 		auto ret = new Koopa_val_named_symbol;
 		*ret = *this;
 		return ret;
 	}
-	void store(std::string&& from, Ost& outstr, std::string prefix) {
-		if(dimension.empty()) {
-			outstr << prefix << "store " << from << ", @" << id << "\n";
-			return;
-		}
-		int last_ptr = -1, now_ptr = -1;
-		for(int i : dimension) {
-			now_ptr = ptr_cnt;
-			ptr_cnt++;
-			outstr << prefix << "%ptr_" << now_ptr << " = getelemptr ";
-			if(last_ptr == -1) {
-				outstr << "@" << id;
-			} else {
-				outstr << "%ptr_" << last_ptr;
-			}
-			outstr << ", " << i << "\n";
-			last_ptr = now_ptr;
-		}
-		outstr << prefix << "store " << from << ", %ptr_" << last_ptr << "\n";
-	}
+	void store(std::string&& from, Ost& outstr, std::string prefix);
 	Koopa_value_type val_type() const override { return KOOPA_VALUE_TYPE_NAMED; }
 };
 
@@ -174,9 +145,15 @@ public:
 		return val->get_str();
 	}
 	void store(std::string&& from, Ost& outstr, std::string prefix) {
-		assert(val_type() == KOOPA_VALUE_TYPE_NAMED);
-		std::static_pointer_cast<Koopa_val_named_symbol>(val)->store(
-			std::move(from), outstr, prefix);
+		if(val_type() == KOOPA_VALUE_TYPE_NAMED) {
+			std::static_pointer_cast<Koopa_val_named_symbol>(val)->store(
+				std::move(from), outstr, prefix);
+			// } else if(val_type() == KOOPA_VALUE_TYPE_PTR) {
+			// 	std::static_pointer_cast<Koopa_val_ptr>(val)->store(
+			// 		std::move(from), outstr, prefix);
+		} else {
+			assert(0);
+		}
 	}
 	void prepare(Ost& outstr, std::string prefix) {
 		return val->prepare(outstr, prefix);
@@ -208,11 +185,120 @@ std::pair<std::string, bool> sysy_lib_funcs[] = {
 std::stack<Koopa_val> stmt_val;
 std::stack<int> loop_level;
 
+
+namespace Koopa_Val_Def {
+void Koopa_val_named_symbol::prepare(Ost& outstr, std::string prefix) {
+	cache_id = unnamed_var_cnt;
+	unnamed_var_cnt++;
+	if(dimension.empty()) {
+		outstr << prefix << "%" << cache_id << " = ";
+		if(max_dep == 0) {
+			outstr << "load @" << id << "\n";
+		} else {
+			outstr << "getelemptr @" << id << ", 0\n";
+		}
+		return;
+	}
+	int last_ptr = -1, now_ptr = -1;
+	bool first_dim = is_ptr;
+	for(auto& i : dimension) {
+		now_ptr = ptr_cnt;
+		ptr_cnt++;
+		if(first_dim) {
+			first_dim = false;
+			outstr << prefix << "%ptr_" << now_ptr << " = load @" << id << "\n";
+			now_ptr = ptr_cnt;
+			ptr_cnt++;
+			if(i.index() == 0) {
+				stmt_val.push(Koopa_val(new Koopa_val_im(std::get<0>(i))));
+			} else {
+				std::get<1>(i)->output(outstr, prefix);
+				stmt_val.top().prepare(outstr, prefix);
+			}
+			outstr << prefix << "%ptr_" << now_ptr << " = getptr %ptr_" << now_ptr - 1 << ", " << stmt_val.top() << "\n";
+			stmt_val.pop();
+		} else {
+			if(i.index() == 0) {
+				stmt_val.push(Koopa_val(new Koopa_val_im(std::get<0>(i))));
+			} else {
+				std::get<1>(i)->output(outstr, prefix);
+				stmt_val.top().prepare(outstr, prefix);
+			}
+			outstr << prefix << "%ptr_" << now_ptr << " = getelemptr ";
+			if(last_ptr == -1) {
+				outstr << "@" << id;
+			} else {
+				outstr << "%ptr_" << last_ptr;
+			}
+			outstr << ", " << stmt_val.top() << "\n";
+			stmt_val.pop();
+		}
+		last_ptr = now_ptr;
+	}
+	outstr << prefix << "%" << cache_id << " = ";
+	if(max_dep + is_ptr == dimension.size()) {
+		outstr << "load %ptr_" << last_ptr << "\n";
+	} else {
+		outstr << "getelemptr %ptr_" << last_ptr << ", 0\n";
+	}
+}
+
+void Koopa_val_named_symbol::store(std::string&& from, Ost& outstr, std::string prefix) {
+	if(dimension.empty()) {
+		outstr << prefix << "store " << from << ", @" << id << "\n";
+		return;
+	}
+	int last_ptr = -1, now_ptr = -1;
+	bool first_dim = is_ptr;
+	for(auto& i : dimension) {
+		now_ptr = ptr_cnt;
+		ptr_cnt++;
+		if(first_dim) {
+			first_dim = false;
+			outstr << prefix << "%ptr_" << now_ptr << " = load @" << id << "\n";
+			now_ptr = ptr_cnt;
+			ptr_cnt++;
+			if(i.index() == 0) {
+				stmt_val.push(Koopa_val(new Koopa_val_im(std::get<0>(i))));
+			} else {
+				std::get<1>(i)->output(outstr, prefix);
+				stmt_val.top().prepare(outstr, prefix);
+			}
+			outstr << prefix << "%ptr_" << now_ptr << " = getptr %ptr_" << now_ptr - 1 << ", " << stmt_val.top() << "\n";
+			stmt_val.pop();
+		} else {
+			if(i.index() == 0) {
+				stmt_val.push(Koopa_val(new Koopa_val_im(std::get<0>(i))));
+			} else {
+				std::get<1>(i)->output(outstr, prefix);
+				stmt_val.top().prepare(outstr, prefix);
+			}
+			outstr << prefix << "%ptr_" << now_ptr << " = getelemptr ";
+			if(last_ptr == -1) {
+				outstr << "@" << id;
+			} else {
+				outstr << "%ptr_" << last_ptr;
+			}
+			outstr << ", " << stmt_val.top() << "\n";
+			stmt_val.pop();
+		}
+		last_ptr = now_ptr;
+	}
+	outstr << prefix << "store " << from << ", %ptr_" << last_ptr << "\n";
+}
+}   // namespace Koopa_Val_Def
+
 template<typename T>
 class Symbol_table_stack {
 	std::list<std::unordered_map<std::string, T>> symbols;
 
 public:
+	Symbol_table_stack() {
+		add_table();
+	}
+	~Symbol_table_stack() {
+		del_table();
+	}
 	auto empty_iter() const {
 		return symbols.front().end();
 	}
@@ -269,11 +355,14 @@ void enter_koopa_block(std::string id, Ost& outstr, std::string prefix) {
 }
 
 void exit_koopa_block(Ost& outstr, std::string prefix) {
-	assert(outstr.muted);
+	if(!outstr.muted) {
+		outstr << prefix << "ret\n";
+	}
 	outstr.unmute();
 }
 
 void assign_initval_to(auto& me, Koopa_val_named_symbol* val, Ost& outstr, std::string prefix) {
+	me->prepare_dim();
 	if(me->is_zero) {
 		if(me->dimension.empty()) {
 			val->store("0", outstr, prefix);
@@ -286,15 +375,15 @@ void assign_initval_to(auto& me, Koopa_val_named_symbol* val, Ost& outstr, std::
 			val->store("0", outstr, prefix);
 			auto i = me->dimension.rbegin();
 			auto j = val->dimension.rbegin();
-			++*j;
-			while(*i == *j) {
+			++std::get<0>(*j);
+			while(*i == std::get<0>(*j)) {
 				*j = 0;
 				i++;
 				j++;
 				if(i == me->dimension.rend()) {
 					break;
 				}
-				++*j;
+				++std::get<0>(*j);
 			}
 			if(i == me->dimension.rend()) {
 				break;
@@ -319,16 +408,108 @@ void assign_initval_to(auto& me, Koopa_val_named_symbol* val, Ost& outstr, std::
 			i->dimension = std::list<int>(++me->dimension.begin(), me->dimension.end());
 		}
 		assign_initval_to(i, val, outstr, prefix);
-		val->dimension.back()++;
+		std::get<0>(val->dimension.back())++;
 	}
 	val->dimension.pop_back();
+}
+
+template<typename Me_type>
+void fill_zero_base(Me_type* me, std::list<int> const & dim) {
+	me->prepare_dim();
+	me->filled_zero = true;
+	if(me->exp.index() == 0 || dim.empty()) {
+		return;
+	}
+	me->dimension = dim;
+	if(me->is_zero) {
+		return;
+	}
+	std::list<std::unique_ptr<Me_type>> nxt_exp;
+	int done = 0;
+	std::list<int> sum_size = dim;
+	sum_size.push_back(1);
+	for(auto i = sum_size.rbegin(), j = i;; i = j) {
+		j++;
+		if(j == sum_size.rend()) {
+			break;
+		}
+		*j *= *i;
+	}
+	for(auto& i : std::get<1>(me->exp)) {
+		if(i->exp.index() == 0) {
+			decltype(nxt_exp)* j = &nxt_exp;
+			auto k = ++sum_size.begin();
+			while(done % *k != 0) {
+				j = &std::get<1>(j->back()->exp);
+				k++;
+			}
+			while(k != --sum_size.end()) {
+				auto ast = std::make_unique<Me_type>();
+				ast->exp = decltype(nxt_exp)();
+				ast->filled_zero = true;
+				j->push_back(std::move(ast));
+				j = &std::get<1>(j->back()->exp);
+				k++;
+			}
+			j->push_back(std::move(i));
+			done++;
+		} else {
+			if(done % *-- --sum_size.end() != 0) {
+				std::cerr << "invalid array\n";
+				throw 114514;
+			}
+			decltype(nxt_exp)* j = &nxt_exp;
+			auto k = ++sum_size.begin();
+			auto l = ++dim.begin();
+			while(done % *k != 0) {
+				j = &std::get<1>(j->back()->exp);
+				k++;
+				l++;
+			}
+			j->push_back(std::make_unique<Me_type>());
+			j->back()->is_zero = false;
+			std::swap(j->back()->exp, i->exp);
+			fill_zero_base(j->back().get(), std::list<int>(l, dim.end()));
+			done += *k;
+		}
+	}
+	decltype(nxt_exp)* i = &nxt_exp;
+	std::stack<decltype(i)> to_visit;
+	to_visit.push(i);
+	auto j = dim.begin();
+	while(j != --dim.end() && !i->back()->is_zero) {
+		i = &std::get<1>(i->back()->exp);
+		to_visit.push(i);
+		j++;
+	}
+	do {
+		i = to_visit.top();
+		for(int k = i->size(); k < *j; k++) {
+			i->push_back(std::make_unique<Me_type>());
+			i->back()->is_zero = true;
+			std::copy(j, dim.end(), i->back()->dimension.begin());
+		}
+		to_visit.pop();
+		j--;
+	} while(!to_visit.empty());
+	me->exp = std::move(nxt_exp);
 }
 
 namespace Ast_Defs {
 
 template class BinaryExpAST_Base<BinaryExpAST<0>, UnaryExpAST>;
 
-void CompUnitAST::output(Ost& outstr, std::string prefix) const {
+void Dimension_list::prepare_dim() {
+	if(dim_list) {
+		dimension.clear();
+		for(auto& i : *dim_list) {
+			dimension.push_back(i->calc());
+		}
+		dim_list.reset();
+	}
+}
+
+void CompUnitAST::output(Ost& outstr, std::string prefix) {
 	outstr << R"(decl @getint(): i32
 decl @getch(): i32
 decl @getarray(*i32): i32
@@ -357,7 +538,7 @@ decl @stoptime()
 	exit_sysy_block();
 }
 
-void FuncDefAST::output(Ost& outstr, std::string prefix) const {
+void FuncDefAST::output(Ost& outstr, std::string prefix) {
 	symbol_table.insert({ident, Koopa_val(new Koopa_val_global_func(this))});
 	enter_sysy_block();
 	outstr << prefix << "fun @" << ident << "(";
@@ -384,7 +565,7 @@ void FuncDefAST::output(Ost& outstr, std::string prefix) const {
 	exit_sysy_block();
 }
 
-void TypeAST::output(Ost& outstr, std::string prefix) const {
+void TypeAST::output(Ost& outstr, std::string prefix) {
 	outstr << prefix << typ;
 }
 
@@ -403,18 +584,18 @@ void BlockAST::output_base(Ost& outstr, std::string prefix, bool update_symbol_t
 	}
 }
 
-void BlockAST::output(Ost& outstr, std::string prefix) const {
+void BlockAST::output(Ost& outstr, std::string prefix) {
 	output_base(outstr, prefix, true);
 }
 
-void BlockItemAST::output(Ost& outstr, std::string prefix) const {
+void BlockItemAST::output(Ost& outstr, std::string prefix) {
 	std::visit([&](auto& i) {
 		i->output(outstr, prefix);
 	},
 			   item);
 }
 
-void StmtAST::output(Ost& outstr, std::string prefix) const {
+void StmtAST::output(Ost& outstr, std::string prefix) {
 	std::visit([&](auto& i) {
 		i->output(outstr, prefix);
 	},
@@ -425,13 +606,13 @@ bool OptionalExpAST::has_value() const {
 	return exp.has_value();
 }
 
-void OptionalExpAST::output(Ost& outstr, std::string prefix) const {
+void OptionalExpAST::output(Ost& outstr, std::string prefix) {
 	if(exp.has_value()) {
 		exp.value()->output(outstr, prefix);
 	}
 }
 
-void ExpAST::output(Ost& outstr, std::string prefix) const {
+void ExpAST::output(Ost& outstr, std::string prefix) {
 	binary_exp->output(outstr, prefix);
 }
 
@@ -439,7 +620,7 @@ int ExpAST::calc() {
 	return binary_exp->calc();
 }
 
-void UnaryExpAST::output(Ost& outstr, std::string prefix) const {
+void UnaryExpAST::output(Ost& outstr, std::string prefix) {
 	if(unary_op.has_value()) {
 		// unary_exp
 		std::get<0>(unary_exp)->output(outstr, prefix);
@@ -465,7 +646,7 @@ int UnaryExpAST::calc() {
 	}
 }
 
-void PrimaryExpAST::output(Ost& outstr, std::string prefix) const {
+void PrimaryExpAST::output(Ost& outstr, std::string prefix) {
 	switch(inside_exp.index()) {
 	case 0:
 		std::get<0>(inside_exp)->output(outstr, prefix);
@@ -488,6 +669,7 @@ int PrimaryExpAST::calc() {
 	case 1: {
 		std::string& ident = std::get<1>(inside_exp)->ident;
 		if(!symbol_table.contains(ident)) {
+			std::cerr << "not find " << ident << " in symbol_table\n";
 			throw 114514;
 		}
 		return symbol_table[ident].get_im_val();
@@ -500,7 +682,7 @@ int PrimaryExpAST::calc() {
 	}
 }
 
-void UnaryOpAST::output(Ost& outstr, std::string prefix) const {
+void UnaryOpAST::output(Ost& outstr, std::string prefix) {
 	outstr << prefix;
 	switch(op) {
 	case OP_ADD:
@@ -538,7 +720,7 @@ bool BinaryOpAST::is_logic_op() {
 	return op == OP_LAND || op == OP_LOR;
 }
 
-void BinaryOpAST::output(Ost& outstr, std::string prefix) const {
+void BinaryOpAST::output(Ost& outstr, std::string prefix) {
 	outstr << prefix;
 	switch(op) {
 	case OP_ADD: outstr << "add "; break;
@@ -578,7 +760,7 @@ int BinaryOpAST::calc(int lhs, int rhs) {
 }
 
 template<typename T, typename U>
-void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) const {
+void BinaryExpAST_Base<T, U>::output(Ost& outstr, std::string prefix) {
 	if(!binary_op.has_value()) {
 		return nxt_level->output(outstr, prefix);
 	}
@@ -662,7 +844,7 @@ int BinaryExpAST_Base<T, U>::calc() {
 	}
 }
 
-void DeclAST::output(Ost& outstr, std::string prefix) const {
+void DeclAST::output(Ost& outstr, std::string prefix) {
 	std::visit([&](auto&& x) {
 		x->output(outstr, prefix);
 	},
@@ -676,7 +858,7 @@ void DeclAST::output_global(Ost& outstr, std::string prefix) const {
 			   decl);
 }
 
-void ConstDeclAST::output(Ost& outstr, std::string prefix) const {
+void ConstDeclAST::output(Ost& outstr, std::string prefix) {
 	for(auto& i : defs) {
 		i->output(outstr, prefix);
 	}
@@ -688,14 +870,20 @@ void ConstDeclAST::output_global(Ost& outstr, std::string prefix) const {
 	}
 }
 
-void ConstDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) const {
+void ConstDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) {
+	prepare_dim();
 	if(dimension.empty()) {
 		auto& exp = std::get<0>(val->exp);
-		symbol_table.insert({ident, new Koopa_val_im(exp->val)});
+		symbol_table.insert({ident, new Koopa_val_im(exp->calc())});
 	} else {
+		if(!val->filled_zero) {
+			fill_zero_base(val.get(), dimension);
+		}
 		auto koopa_val = new Koopa_val_named_symbol();
 		// no set dimension
 		koopa_val->set_id(ident);
+		koopa_val->set_ptr(false);
+		koopa_val->set_dep(dimension.size());
 		outstr << prefix
 			   << (is_global ? "global " : "")
 			   << "@" << koopa_val->get_id() << " = alloc ";
@@ -725,41 +913,17 @@ void ConstDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) c
 	// symbol_const[ident] = std::get<int>(val->val.value());
 }
 
-void ConstDefAST::output(Ost& outstr, std::string prefix) const {
+void ConstDefAST::output(Ost& outstr, std::string prefix) {
 	output_base(outstr, prefix, false);
 }
 
-void ConstDefAST::output_global(Ost& outstr, std::string prefix) const {
+void ConstDefAST::output_global(Ost& outstr, std::string prefix) {
 	output_base(outstr, prefix, true);
 }
 
-void ConstInitValAST::output_global(Ost& outstr, std::string prefix) const {
-	if(is_zero) {
-		outstr << prefix << "zeroinit";
-	} else if(exp.index() == 0) {
-		outstr << prefix << std::get<0>(exp)->val;
-	} else {
-		outstr << prefix << "{";
-		bool is_first_param = true;
-		for(auto& i : std::get<1>(exp)) {
-			if(is_first_param) {
-				is_first_param = false;
-			} else {
-				outstr << ", ";
-			}
-			i->output_global(outstr, prefix);
-		}
-		outstr << prefix << "}";
-	}
-}
-
-void ConstInitValAST::output(Ost& outstr, std::string prefix) const {
-	// use assign_to instead.
-	assert(0);
-	return;
-}
-
-void InitValAST::output_global(Ost& outstr, std::string prefix) const {
+void ConstInitValAST::output_global(Ost& outstr, std::string prefix) {
+	prepare_dim();
+	assert(exp.index() == 0 || filled_zero);
 	if(is_zero) {
 		outstr << prefix << "zeroinit";
 	} else if(exp.index() == 0) {
@@ -779,13 +943,43 @@ void InitValAST::output_global(Ost& outstr, std::string prefix) const {
 	}
 }
 
-void InitValAST::output(Ost& outstr, std::string prefix) const {
+void ConstInitValAST::output(Ost& outstr, std::string prefix) {
 	// use assign_to instead.
 	assert(0);
 	return;
 }
 
-void LValAST::output(Ost& outstr, std::string prefix) const {
+void InitValAST::output_global(Ost& outstr, std::string prefix) {
+	prepare_dim();
+	assert(exp.index() == 0 || filled_zero);
+	if(is_zero) {
+		outstr << prefix << "zeroinit";
+	} else if(exp.index() == 0) {
+		outstr << prefix << std::get<0>(exp)->calc();
+	} else {
+		outstr << prefix << "{";
+		bool is_first_param = true;
+		for(auto& i : std::get<1>(exp)) {
+			if(is_first_param) {
+				is_first_param = false;
+			} else {
+				outstr << ", ";
+			}
+			i->output_global(outstr, prefix);
+		}
+		outstr << prefix << "}";
+	}
+}
+
+void InitValAST::output(Ost& outstr, std::string prefix) {
+	// use assign_to instead.
+	assert(0);
+	prepare_dim();
+	return;
+}
+
+void LValAST::output(Ost& outstr, std::string prefix) {
+	// no prepare_dim
 	if(!symbol_table.contains(ident)) {
 		std::cerr << "What is " << ident << "???\n";
 		throw 114514;
@@ -794,20 +988,16 @@ void LValAST::output(Ost& outstr, std::string prefix) const {
 		stmt_val.push(symbol_table[ident]);
 	} else {
 		auto koopa_val = ((Koopa_val_named_symbol*)(symbol_table[ident].get_ptr()))->copy();
-		koopa_val->set_dim(dimension);
+		koopa_val->set_dim(*dim_list);
 		stmt_val.push(Koopa_val(koopa_val));
 	}
 }
 
-void ConstExpAST::output(Ost& outstr, std::string prefix) const {
-	stmt_val.push(Koopa_val(new Koopa_val_im(val)));
+void ConstExpAST::output(Ost& outstr, std::string prefix) {
+	stmt_val.push(Koopa_val(new Koopa_val_im(calc())));
 }
 
-void ConstExpAST::calc() {
-	val = exp->calc();
-}
-
-void VarDeclAST::output(Ost& outstr, std::string prefix) const {
+void VarDeclAST::output(Ost& outstr, std::string prefix) {
 	for(auto& i : defs) {
 		i->typ = std::make_unique<TypeAST>(*typ);
 		i->output(outstr, prefix);
@@ -821,9 +1011,12 @@ void VarDeclAST::output_global(Ost& outstr, std::string prefix) const {
 	}
 }
 
-void VarDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) const {
+void VarDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) {
+	prepare_dim();
 	auto reg_var = new Koopa_val_named_symbol;
 	reg_var->set_id(ident);
+	reg_var->set_ptr(false);
+	reg_var->set_dep(dimension.size());
 	outstr << prefix
 		   << (is_global ? "global " : "")
 		   << "@" << reg_var->get_id() << " = alloc ";
@@ -835,6 +1028,9 @@ void VarDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) con
 		outstr << ", " << *i << "]";
 	}
 	if(val.has_value()) {
+		if(!val.value()->filled_zero) {
+			fill_zero_base(val.value().get(), dimension);
+		}
 		if(is_global) {
 			outstr << ", ";
 			val.value()->output_global(outstr, prefix);
@@ -855,15 +1051,15 @@ void VarDefAST::output_base(Ost& outstr, std::string prefix, bool is_global) con
 	}
 	symbol_table.insert({ident, Koopa_val(reg_var)});
 }
-void VarDefAST::output(Ost& outstr, std::string prefix) const {
+void VarDefAST::output(Ost& outstr, std::string prefix) {
 	output_base(outstr, prefix, false);
 }
 
-void VarDefAST::output_global(Ost& outstr, std::string prefix) const {
+void VarDefAST::output_global(Ost& outstr, std::string prefix) {
 	output_base(outstr, prefix, true);
 }
 
-void LValAssignAST::output(Ost& outstr, std::string prefix) const {
+void LValAssignAST::output(Ost& outstr, std::string prefix) {
 	Koopa_val lhs, rhs;
 	lval->output(outstr, prefix);
 	lhs = stmt_val.top();
@@ -876,7 +1072,7 @@ void LValAssignAST::output(Ost& outstr, std::string prefix) const {
 	// outstr << prefix << "store " << rhs << ", @" << lhs.get_named_name() << '\n';
 }
 
-void ReturnAST::output(Ost& outstr, std::string prefix) const {
+void ReturnAST::output(Ost& outstr, std::string prefix) {
 	exp->output(outstr, prefix);
 	if(exp->has_value()) {
 		Koopa_val val = stmt_val.top();
@@ -911,7 +1107,7 @@ std::string IfAST::get_end_str() const {
 	return "%end" + std::to_string(if_id);
 }
 
-void IfAST::output(Ost& outstr, std::string prefix) const {
+void IfAST::output(Ost& outstr, std::string prefix) {
 	cond->output(outstr, prefix);
 	auto cond_val = stmt_val.top();
 	stmt_val.pop();
@@ -936,7 +1132,7 @@ void IfAST::output(Ost& outstr, std::string prefix) const {
 	enter_koopa_block(get_end_str(), outstr, prefix);
 }
 
-void WhileAST::output(Ost& outstr, std::string prefix) const {
+void WhileAST::output(Ost& outstr, std::string prefix) {
 	int cur_loop_cnt = loop_cnt;
 	loop_cnt++;
 	loop_level.push(cur_loop_cnt);
@@ -964,17 +1160,17 @@ void WhileAST::output(Ost& outstr, std::string prefix) const {
 	enter_koopa_block("%loop_end" + std::to_string(cur_loop_cnt), outstr, prefix);
 }
 
-void BreakAST::output(Ost& outstr, std::string prefix) const {
+void BreakAST::output(Ost& outstr, std::string prefix) {
 	outstr << prefix << "jump %loop_end" << loop_level.top() << "\n";
 	outstr.mute();
 }
 
-void ContinueAST::output(Ost& outstr, std::string prefix) const {
+void ContinueAST::output(Ost& outstr, std::string prefix) {
 	outstr << prefix << "jump %loop_entry" << loop_level.top() << "\n";
 	outstr.mute();
 }
 
-void FuncDefParamsAST::output(Ost& outstr, std::string prefix) const {
+void FuncDefParamsAST::output(Ost& outstr, std::string prefix) {
 	bool is_first_param = true;
 	for(auto& i : params) {
 		if(is_first_param) {
@@ -982,27 +1178,53 @@ void FuncDefParamsAST::output(Ost& outstr, std::string prefix) const {
 		} else {
 			outstr << ", ";
 		}
-		outstr << "@" << i.second << "_param: ";
-		i.first->output(outstr, "");
+		i->output(outstr, prefix);
 	}
 }
 
 void FuncDefParamsAST::output_save(Ost& outstr, std::string prefix) const {
 	for(auto& i : params) {
-		auto val = new Koopa_val_named_symbol();
-		val->set_id(i.second);
-		outstr << prefix << "@" << val->get_id() << " = alloc ";
-		i.first->output(outstr, "");
-		outstr << "\n";
-		val->store(std::string("@") + i.second + std::string("_param"),
-				   outstr,
-				   prefix);
-		// << prefix << "store @" << i.second << "_param, @" << val->get_id() << "\n";
-		symbol_table.insert({i.second, val});
+		i->output_save(outstr, prefix);
 	}
 }
 
-void FuncCallParamsAST::output(Ost& outstr, std::string prefix) const {
+void FuncDefParamAST::output(Ost& outstr, std::string prefix) {
+	prepare_dim();
+	outstr << "@" << id << "_param: "
+		   << (is_ptr ? "*" : "");
+	for(int i = dimension.size(); i-- > 0;) {
+		outstr << "[";
+	}
+	typ->output(outstr, "");
+	for(int i : dimension) {
+		outstr << ", " << i << "]";
+	}
+}
+
+void FuncDefParamAST::output_save(Ost& outstr, std::string prefix) {
+	prepare_dim();
+	auto val = new Koopa_val_named_symbol();
+	val->set_id(id);
+	val->set_ptr(is_ptr);
+	val->set_dep(dimension.size());
+	outstr << prefix << "@" << val->get_id() << " = alloc "
+		   << (is_ptr ? "*" : "");
+	for(int i = dimension.size(); i-- > 0;) {
+		outstr << "[";
+	}
+	typ->output(outstr, "");
+	for(int i : dimension) {
+		outstr << ", " << i << "]";
+	}
+	outstr << "\n";
+	val->store(std::string("@") + id + std::string("_param"),
+			   outstr,
+			   prefix);
+	// << prefix << "store @" << i.second << "_param, @" << val->get_id() << "\n";
+	symbol_table.insert({id, val});
+}
+
+void FuncCallParamsAST::output(Ost& outstr, std::string prefix) {
 	for(auto i = params.rbegin(); i != params.rend(); i++) {
 		(*i)->output(outstr, prefix);
 	}
@@ -1012,7 +1234,7 @@ int FuncCallParamsAST::get_param_cnt() const {
 	return params.size();
 }
 
-void FuncCallAST::output(Ost& outstr, std::string prefix) const {
+void FuncCallAST::output(Ost& outstr, std::string prefix) {
 	params->output(outstr, prefix);
 	int param_cnt = params->get_param_cnt();
 	int now_var = -1;
