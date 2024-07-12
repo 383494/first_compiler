@@ -18,6 +18,18 @@ enum Asm_val_type {
 	ASM_VAL_TYPE_GLOBAL_VAR,
 };
 
+void access_sp(std::string reg, int offset, bool is_save_to_sp, Outp &outstr) {
+	if(offset >= -2048 && offset <= 2047) {
+		outstr << (is_save_to_sp ? "sw " : "lw ") << reg << ", " << offset << "(sp)\n";
+	} else {
+		assert(reg != "t2");
+		std::string tmp_reg = "t2";
+		outstr << "li " << tmp_reg << ", " << offset << "\n"
+			   << "add " << tmp_reg << ", " << tmp_reg << ", sp\n"
+			   << (is_save_to_sp ? "sw " : "lw ") << reg << ", 0(" << tmp_reg << ")\n";
+	}
+}
+
 class Asm_val {
 protected:
 	void access_ptr_via_reg(std::string reg, bool is_load, Outp &outstr) const {
@@ -57,10 +69,10 @@ private:
 public:
 	Asm_val_localvar(int input_offset) { offset = input_offset; }
 	void assign_from_reg(std::string reg, Outp &outstr) const override {
-		outstr << "sw " << reg << ", " << offset << "(sp)\n";
+		access_sp(reg, offset, true, outstr);
 	}
 	void load_to_reg(std::string reg, Outp &outstr) const override {
-		outstr << "lw " << reg << ", " << offset << "(sp)\n";
+		access_sp(reg, offset, false, outstr);
 	}
 	void load_addr_to_reg(std::string reg, Outp &outstr) const override {
 		outstr << "li t0, " << offset << "\n"
@@ -114,7 +126,7 @@ public:
 		outstr << "lw " << reg << ", 0(" << tmp_reg << ")\n";
 	}
 	void load_addr_to_reg(std::string reg, Outp &outstr) const override {
-		outstr << "lw " << reg << ", " << offset << "(sp)\n";
+		access_sp(reg, offset, false, outstr);
 	}
 	void load_real_to_reg(std::string reg, Outp &outstr) const override {
 		load_addr_to_reg(reg, outstr);
@@ -125,7 +137,7 @@ public:
 		outstr << "sw " << reg << ", 0(" << tmp_reg << ")\n";
 	}
 	void assign_addr_from_reg(std::string reg, Outp &outstr) const override {
-		outstr << "sw " << reg << ", " << offset << "(sp)\n";
+		access_sp(reg, offset, true, outstr);
 	}
 };
 }   // namespace Asm_Val_Defs
@@ -173,7 +185,11 @@ int get_array_len(const koopa_raw_type_t arr) {
 }
 
 int get_array_len(const koopa_raw_value_t arr) {
-	return get_array_len(arr->ty);
+	if(arr->kind.tag == KOOPA_RVT_LOAD) {
+		return 1;
+	} else {
+		return get_array_len(arr->ty);
+	}
 }
 
 int get_function_stack_mem(const koopa_raw_value_t &val) {
@@ -272,7 +288,7 @@ void dfs_ir(const koopa_raw_function_t &func, Outp &outstr) {
 		outstr << "li t0, " << -mem << "\nadd sp, sp, t0\n";
 	}
 	if(Global_State::save_ra.top()) {
-		outstr << "sw ra, " << mem - 4 << "(sp)\n";
+		access_sp("ra", mem - 4, true, outstr);
 	}
 	for(size_t i = 0; i < func->bbs.len; i++) {
 		assert(func->bbs.kind == KOOPA_RSIK_BASIC_BLOCK);
@@ -392,7 +408,7 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 			if(i < 8) {
 				outstr << "mv a" << i << ", t0\n";
 			} else {
-				outstr << "sw t0, " << (i - 8) * 4 << "(sp)\n";
+				access_sp("t0", (i - 8) * 4, true, outstr);
 			}
 		}
 		outstr << "call " << kind.data.call.callee->name + 1 << "\n";
@@ -414,22 +430,14 @@ void dfs_ir(const koopa_raw_value_t &val, Outp &outstr) {
 		valmp[(void *)val] = std::make_shared<Asm_val_globalvar>(val->name + 1);
 		break;
 	case KOOPA_RVT_GET_ELEM_PTR:
-		dfs_ir(kind.data.get_elem_ptr.src, outstr);
-		dfs_ir(kind.data.get_elem_ptr.index, outstr);
-		valmp[(void *)kind.data.get_elem_ptr.src]->load_addr_to_reg("t0", outstr);
-		valmp[(void *)kind.data.get_elem_ptr.index]->load_to_reg("t1", outstr);
-		outstr << "li t2, "
-			   << get_array_size(kind.data.get_elem_ptr.src) /
-					  get_array_len(kind.data.get_elem_ptr.src)
-			   << "\n";
-		outstr << "mul t1, t1, t2\n"
-			   << "add t0, t0, t1\n";
-		valmp[(void *)val]->assign_addr_from_reg("t0", outstr);
-		break;
 	case KOOPA_RVT_GET_PTR:
 		dfs_ir(kind.data.get_elem_ptr.src, outstr);
 		dfs_ir(kind.data.get_elem_ptr.index, outstr);
-		valmp[(void *)kind.data.get_elem_ptr.src]->load_to_reg("t0", outstr);
+		if(kind.tag == KOOPA_RVT_GET_ELEM_PTR) {
+			valmp[(void *)kind.data.get_elem_ptr.src]->load_addr_to_reg("t0", outstr);
+		} else {
+			valmp[(void *)kind.data.get_elem_ptr.src]->load_to_reg("t0", outstr);
+		}
 		valmp[(void *)kind.data.get_elem_ptr.index]->load_to_reg("t1", outstr);
 		outstr << "li t2, "
 			   << get_array_size(kind.data.get_elem_ptr.src) /
@@ -452,7 +460,7 @@ void dfs_ir(const koopa_raw_return_t &ret, Outp &outstr) {
 	}
 	int mem = Global_State::function_stack_mem.top();
 	if(Global_State::save_ra.top()) {
-		outstr << "lw ra, " << mem - 4 << "(sp)\n";
+		access_sp("ra", mem - 4, false, outstr);
 	}
 	if(mem > 0) {
 		outstr << "li t0, " << mem << "\n";
